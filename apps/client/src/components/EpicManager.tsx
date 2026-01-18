@@ -1,7 +1,22 @@
 import { useState } from 'react';
-import type { Epic } from '@jira-planner/shared';
+import type { Epic, Ticket } from '@jira-planner/shared';
 import { useStore } from '../store/useStore';
 import { createEpic, updateEpicApi, deleteEpic } from '../utils/api';
+
+const TICKET_TYPE_ICONS: Record<string, string> = {
+  feature: '⚔️',
+  bug: '🐛',
+  improvement: '✨',
+  task: '📋',
+  design: '🎨',
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  pending: 'text-beige/60',
+  approved: 'text-quest-active',
+  denied: 'text-quest-denied',
+  created: 'text-quest-complete',
+};
 
 interface EpicFormData {
   name: string;
@@ -29,6 +44,23 @@ export function EpicManager() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<EpicFormData>(emptyForm);
   const [isSaving, setIsSaving] = useState(false);
+  const [expandedEpics, setExpandedEpics] = useState<Set<string>>(new Set());
+
+  const toggleEpicExpanded = (epicId: string) => {
+    setExpandedEpics((prev) => {
+      const next = new Set(prev);
+      if (next.has(epicId)) {
+        next.delete(epicId);
+      } else {
+        next.add(epicId);
+      }
+      return next;
+    });
+  };
+
+  const getEpicTickets = (epicId: string): Ticket[] => {
+    return tickets.filter((t) => t.epicId === epicId);
+  };
 
   const getCampaignStats = (epicId: string) => {
     const campaignQuests = tickets.filter((t) => t.epicId === epicId);
@@ -244,6 +276,22 @@ export function EpicManager() {
                         {stats.progress}%
                       </span>
                     </div>
+
+                    {/* Expand/Collapse Toggle */}
+                    {stats.total > 0 && (
+                      <button
+                        onClick={() => toggleEpicExpanded(epic.id)}
+                        className="mt-3 flex items-center gap-2 font-readable text-sm text-gold/80 hover:text-gold transition-colors"
+                      >
+                        <span className="transform transition-transform duration-200" style={{
+                          display: 'inline-block',
+                          transform: expandedEpics.has(epic.id) ? 'rotate(90deg)' : 'rotate(0deg)',
+                        }}>
+                          ▶
+                        </span>
+                        {expandedEpics.has(epic.id) ? 'Hide' : 'Show'} Quests ({stats.total})
+                      </button>
+                    )}
                   </div>
 
                   {/* Actions */}
@@ -264,6 +312,47 @@ export function EpicManager() {
                     </button>
                   </div>
                 </div>
+
+                {/* Expanded Ticket List */}
+                {expandedEpics.has(epic.id) && (
+                  <div className="mt-4 pt-4 border-t-2 border-border/30">
+                    <div className="space-y-2">
+                      {getEpicTickets(epic.id).map((ticket) => (
+                        <div
+                          key={ticket.id}
+                          className="flex items-center gap-3 p-2 bg-background/30 rounded border border-border/20 hover:border-border/40 transition-colors"
+                        >
+                          {/* Ticket Type Icon */}
+                          <span className="text-lg" title={ticket.ticketType}>
+                            {TICKET_TYPE_ICONS[ticket.ticketType] || '📋'}
+                          </span>
+
+                          {/* Ticket Title */}
+                          <span className="flex-1 font-readable text-base text-beige truncate">
+                            {ticket.title}
+                          </span>
+
+                          {/* Jira Key (if created) */}
+                          {ticket.jiraKey && (
+                            <a
+                              href={ticket.jiraUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-2 py-0.5 bg-rarity-rare/20 border border-rarity-rare/50 rounded font-pixel text-pixel-xs text-rarity-rare hover:bg-rarity-rare/30"
+                            >
+                              {ticket.jiraKey}
+                            </a>
+                          )}
+
+                          {/* Status */}
+                          <span className={`font-pixel text-pixel-xs uppercase ${STATUS_COLORS[ticket.status]}`}>
+                            {ticket.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}

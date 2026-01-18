@@ -265,15 +265,15 @@ export function createJiraRouter(storage: ReturnType<typeof createStorageService
         return res.status(400).json(response);
       }
 
-      // Fetch users from Jira
-      const jiraUsers = await jiraService.getAssignableUsers(config);
+      // Fetch team members from team-filtered tickets (not all project users)
+      const jiraUsers = await jiraService.getTeamMembersFromTickets(config);
 
       // Convert Jira users to team members
       const teamMemberInputs = jiraUsers.map((user) => ({
         name: user.displayName,
         role: 'Team Member',
         skills: [] as string[],
-        jiraUsername: user.emailAddress || user.displayName,
+        jiraUsername: user.emailAddress || user.displayName || user.accountId,
       }));
 
       // Replace team members in database

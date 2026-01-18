@@ -171,37 +171,38 @@ export class JiraService {
       `status NOT IN (Done, Closed)`, // Active epics only
     ];
 
-    // Add team filter if configured
-    if (config.teamFieldId && config.teamValue) {
-      jqlParts.push(`"${config.teamFieldId}" = "${config.teamValue}"`);
+    // Add team filter if configured - use team ID (UUID) for atlassian-team field
+    if (config.teamValue) {
+      // Use the team ID (UUID) instead of name for cf[10104]
+      jqlParts.push(`cf[10104] = "${config.teamValue}"`);
+      console.log(`Adding team filter: cf[10104] = "${config.teamValue}"`);
     }
 
     const jql = jqlParts.join(' AND ') + ' ORDER BY key ASC';
     console.log(`Epic JQL query: ${jql}`);
 
-    // Primary: Use JQL with pagination
+    // Primary: Use JQL with pagination (new /search/jql API uses nextPageToken)
     try {
-      let startAt = 0;
-      let total = 0;
+      let nextPageToken: string | undefined;
 
       do {
-        // Use new POST-based search/jql endpoint (old GET endpoint deprecated)
         const url = `${config.baseUrl}/rest/api/3/search/jql`;
+        const body: Record<string, any> = {
+          jql,
+          maxResults,
+          fields: ['summary', 'key'],
+        };
+        if (nextPageToken) {
+          body.nextPageToken = nextPageToken;
+        }
+
         const response = await this.fetchWithRetry<{
           issues: { id: string; key: string; fields: { summary: string } }[];
-          total: number;
-          startAt: number;
+          nextPageToken?: string;
         }>(url, {
           method: 'POST',
-          body: JSON.stringify({
-            jql,
-            startAt,
-            maxResults,
-            fields: ['summary', 'key'],
-          }),
+          body: JSON.stringify(body),
         });
-
-        total = response.total;
 
         allEpics.push(
           ...response.issues.map((issue) => ({
@@ -212,9 +213,9 @@ export class JiraService {
           }))
         );
 
-        startAt += maxResults;
-        console.log(`Fetched ${allEpics.length}/${total} epics...`);
-      } while (startAt < total);
+        nextPageToken = response.nextPageToken;
+        console.log(`Fetched ${allEpics.length} epics so far...`);
+      } while (nextPageToken);
 
       console.log(`JQL returned ${allEpics.length} active epics`);
       return allEpics;
@@ -272,6 +273,16 @@ export class JiraService {
     } catch (error) {
       console.error(`Failed to find field "${fieldName}":`, error);
       return null;
+    }
+  }
+
+  async getAllFields(config: JiraConfig): Promise<{ id: string; name: string; custom: boolean }[]> {
+    try {
+      const url = `${config.baseUrl}/rest/api/3/field`;
+      return await this.fetchWithRetry<{ id: string; name: string; custom: boolean }[]>(url, { method: 'GET' });
+    } catch (error) {
+      console.error('Failed to fetch fields:', error);
+      return [];
     }
   }
 
@@ -422,7 +433,7 @@ export class JiraService {
   /**
    * Fetch recent tickets from Jira for learning purposes
    * Uses JQL to query tickets with various fields for analysis
-   * Note: Uses the new /rest/api/3/search/jql POST endpoint (old GET endpoint deprecated)
+   * Note: Uses the new /rest/api/3/search POST endpoint (old GET endpoint deprecated)
    */
   async getRecentTickets(
     config: JiraConfig,
@@ -433,12 +444,18 @@ export class JiraService {
     } = {}
   ): Promise<JiraTicketForLearning[]> {
     try {
-      const { maxResults = 100, includeFields = [] } = options;
+      const { maxResults = 500, includeFields = [] } = options;
+      const pageSize = 100; // Jira API limit per request
 
-      // Default JQL: recent tickets from the project
-      const jql =
-        options.jql ||
-        `project = ${config.projectKey} AND issuetype != Epic ORDER BY updated DESC`;
+      // Build JQL with optional team filter using team ID (UUID) for cf[10104]
+      let defaultJql: string;
+      if (config.teamValue) {
+        defaultJql = `project = ${config.projectKey} AND issuetype != Epic AND cf[10104] = "${config.teamValue}" ORDER BY updated DESC`;
+        console.log(`Fetching tickets with team filter: cf[10104] = "${config.teamValue}"`);
+      } else {
+        defaultJql = `project = ${config.projectKey} AND issuetype != Epic ORDER BY updated DESC`;
+      }
+      const jql = options.jql || defaultJql;
 
       const fields = [
         'summary',
@@ -451,29 +468,80 @@ export class JiraService {
         'updated',
         'labels',
         'components',
+        'parent', // For epic link in next-gen projects
         ...(config.epicLinkField ? [config.epicLinkField] : []),
         ...includeFields,
       ];
 
-      // Use new POST-based search/jql endpoint
-      const url = `${config.baseUrl}/rest/api/3/search/jql`;
-      const response = await this.fetchWithRetry<{
-        issues: any[];
-        total: number;
-      }>(url, {
-        method: 'POST',
-        body: JSON.stringify({
-          jql,
-          maxResults,
-          fields,
-        }),
-      });
+      const allTickets: JiraTicketForLearning[] = [];
+      let nextPageToken: string | undefined;
 
-      return response.issues.map((issue) => this.mapJiraIssueToLearningTicket(issue, config));
+      do {
+        const thisPageSize = Math.min(pageSize, maxResults - allTickets.length);
+
+        // Use new /search/jql endpoint with nextPageToken pagination
+        const url = `${config.baseUrl}/rest/api/3/search/jql`;
+        const body: Record<string, any> = {
+          jql,
+          maxResults: thisPageSize,
+          fields,
+        };
+        if (nextPageToken) {
+          body.nextPageToken = nextPageToken;
+        }
+
+        const response = await this.fetchWithRetry<{
+          issues: any[];
+          nextPageToken?: string;
+        }>(url, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+
+        const pageTickets = response.issues.map((issue) =>
+          this.mapJiraIssueToLearningTicket(issue, config)
+        );
+        allTickets.push(...pageTickets);
+        nextPageToken = response.nextPageToken;
+
+        console.log(`Fetched ${allTickets.length} tickets so far...`);
+      } while (nextPageToken && allTickets.length < maxResults);
+
+      console.log(`Fetched ${allTickets.length} tickets total`);
+      return allTickets;
     } catch (error) {
       console.error('Failed to fetch recent tickets:', error);
       return [];
     }
+  }
+
+  /**
+   * Extract unique team members from team-filtered tickets
+   * Used for sync to only get members who work on team tickets
+   */
+  async getTeamMembersFromTickets(
+    config: JiraConfig,
+    options: { maxResults?: number } = {}
+  ): Promise<JiraUser[]> {
+    const { maxResults = 500 } = options;
+
+    // Fetch tickets with team filter applied
+    const tickets = await this.getRecentTickets(config, { maxResults });
+
+    // Extract unique assignees
+    const uniqueUsers = new Map<string, JiraUser>();
+    for (const ticket of tickets) {
+      if (ticket.assignee) {
+        uniqueUsers.set(ticket.assignee.accountId, {
+          accountId: ticket.assignee.accountId,
+          displayName: ticket.assignee.displayName,
+          emailAddress: '', // Not available from ticket data
+        });
+      }
+    }
+
+    console.log(`Found ${uniqueUsers.size} unique team members from ${tickets.length} tickets`);
+    return Array.from(uniqueUsers.values());
   }
 
   /**
@@ -528,12 +596,26 @@ export class JiraService {
             displayName: fields.assignee.displayName,
           }
         : null,
-      epicKey: config.epicLinkField ? fields[config.epicLinkField] : null,
+      epicKey: this.extractEpicKey(fields, config),
       labels: fields.labels || [],
       components: (fields.components || []).map((c: any) => c.name),
       created: fields.created,
       updated: fields.updated,
     };
+  }
+
+  private extractEpicKey(fields: any, config: JiraConfig): string | null {
+    // Try custom epic link field first
+    if (config.epicLinkField && fields[config.epicLinkField]) {
+      return fields[config.epicLinkField];
+    }
+
+    // Fallback to parent field (used in next-gen Jira projects)
+    if (fields.parent?.key) {
+      return fields.parent.key;
+    }
+
+    return null;
   }
 
   private extractTextFromADF(adfContent: any): string {

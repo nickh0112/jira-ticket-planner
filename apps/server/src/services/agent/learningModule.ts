@@ -26,7 +26,7 @@ export async function learnFromJiraHistory(context: LearningContext): Promise<Le
 
   // Step 1: Fetch recent tickets from Jira
   console.log('Fetching recent tickets from Jira...');
-  const recentTickets = await jiraService.getRecentTickets(config, { maxResults: 200 });
+  const recentTickets = await jiraService.getRecentTickets(config, { maxResults: 500 });
   result.ticketsAnalyzed = recentTickets.length;
   console.log(`Fetched ${recentTickets.length} tickets`);
 
@@ -98,12 +98,20 @@ export async function learnFromJiraHistory(context: LearningContext): Promise<Le
 
   // Group tickets by epic
   const ticketsByEpic = new Map<string, typeof recentTickets>();
+  let ticketsWithEpic = 0;
   for (const ticket of recentTickets) {
     if (ticket.epicKey) {
+      ticketsWithEpic++;
       const existing = ticketsByEpic.get(ticket.epicKey) || [];
       existing.push(ticket);
       ticketsByEpic.set(ticket.epicKey, existing);
     }
+  }
+  console.log(`Found ${ticketsWithEpic} tickets with epic keys, grouped into ${ticketsByEpic.size} unique epics`);
+  console.log(`Local database has ${epics.length} epics`);
+  if (ticketsByEpic.size > 0) {
+    console.log('Epic keys from Jira tickets:', Array.from(ticketsByEpic.keys()).slice(0, 10).join(', '));
+    console.log('Epic keys in local DB:', epics.slice(0, 10).map(e => e.key).join(', '));
   }
 
   for (const epic of epics) {
@@ -139,6 +147,53 @@ export async function learnFromJiraHistory(context: LearningContext): Promise<Le
     result.patternsLearned += epicCategoriesToSave.length;
   }
   console.log(`Categorized ${result.epicCategories.length} epics with ${epicCategoriesToSave.length} categories`);
+
+  // Step 3b: Learn ticket-epic relationship patterns
+  console.log('Learning ticket-epic relationship patterns...');
+  for (const epic of epics) {
+    const epicTickets = ticketsByEpic.get(epic.key) || [];
+    if (epicTickets.length === 0) continue;
+
+    // Learn ticket type distribution for this epic
+    const typeDistribution = analyzeTicketTypeDistribution(epicTickets);
+    storage.saveAgentKnowledge({
+      id: `epic-ticket-types-${epic.id}`,
+      knowledgeType: 'assignment_pattern',
+      key: `epic-${epic.id}-ticket-types`,
+      value: JSON.stringify(typeDistribution),
+      confidence: Math.min(0.5 + epicTickets.length * 0.02, 0.95), // Higher confidence with more tickets
+    });
+    result.patternsLearned++;
+
+    // Learn common title keywords for this epic
+    const commonKeywords = extractCommonKeywords(epicTickets.map(t => t.summary));
+    if (commonKeywords.length > 0) {
+      storage.saveAgentKnowledge({
+        id: `epic-keywords-${epic.id}`,
+        knowledgeType: 'assignment_pattern',
+        key: `epic-${epic.id}-keywords`,
+        value: JSON.stringify(commonKeywords),
+        confidence: 0.7,
+      });
+      result.patternsLearned++;
+    }
+
+    // Learn typical ticket count and velocity for this epic
+    storage.saveAgentKnowledge({
+      id: `epic-stats-${epic.id}`,
+      knowledgeType: 'assignment_pattern',
+      key: `epic-${epic.id}-stats`,
+      value: JSON.stringify({
+        totalTickets: epicTickets.length,
+        avgDescriptionLength: Math.round(
+          epicTickets.reduce((sum, t) => sum + t.description.length, 0) / epicTickets.length
+        ),
+      }),
+      confidence: 0.8,
+    });
+    result.patternsLearned++;
+  }
+  console.log('Ticket-epic relationship patterns learned');
 
   // Step 4: Learn field patterns (description length, AC count, etc.)
   console.log('Analyzing field patterns...');
@@ -187,4 +242,69 @@ function analyzeFieldPatterns(tickets: { summary: string; description: string }[
   }
 
   return patterns;
+}
+
+/**
+ * Analyze ticket type distribution for an epic
+ */
+function analyzeTicketTypeDistribution(
+  tickets: { issueType: string }[]
+): Record<string, { count: number; percentage: number }> {
+  const typeCounts: Record<string, number> = {};
+  const total = tickets.length;
+
+  for (const ticket of tickets) {
+    const type = ticket.issueType.toLowerCase();
+    typeCounts[type] = (typeCounts[type] || 0) + 1;
+  }
+
+  const distribution: Record<string, { count: number; percentage: number }> = {};
+  for (const [type, count] of Object.entries(typeCounts)) {
+    distribution[type] = {
+      count,
+      percentage: Math.round((count / total) * 100),
+    };
+  }
+
+  return distribution;
+}
+
+/**
+ * Extract common keywords from ticket titles
+ */
+function extractCommonKeywords(titles: string[]): string[] {
+  // Common words to ignore
+  const stopWords = new Set([
+    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with',
+    'by', 'from', 'as', 'is', 'was', 'are', 'be', 'been', 'being', 'have', 'has', 'had',
+    'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must',
+    'shall', 'can', 'need', 'dare', 'ought', 'used', 'this', 'that', 'these', 'those',
+    'i', 'you', 'he', 'she', 'it', 'we', 'they', 'what', 'which', 'who', 'whom', 'when',
+    'where', 'why', 'how', 'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other',
+    'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very',
+    'add', 'update', 'fix', 'remove', 'create', 'implement', 'make', 'get', 'set',
+  ]);
+
+  const wordCounts: Record<string, number> = {};
+
+  for (const title of titles) {
+    // Split into words, normalize, and filter
+    const words = title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 2 && !stopWords.has(word));
+
+    for (const word of words) {
+      wordCounts[word] = (wordCounts[word] || 0) + 1;
+    }
+  }
+
+  // Return words that appear in at least 10% of titles, up to 15 keywords
+  const minCount = Math.max(2, Math.floor(titles.length * 0.1));
+  return Object.entries(wordCounts)
+    .filter(([, count]) => count >= minCount)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15)
+    .map(([word]) => word);
 }
