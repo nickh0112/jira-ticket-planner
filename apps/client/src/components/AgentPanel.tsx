@@ -15,6 +15,7 @@ import type {
   AssigneeSuggestion,
   InferredSkill,
 } from '@jira-planner/shared';
+import { PixelSelect } from './PixelSelect';
 
 interface GroupedSkills {
   [teamMemberId: string]: {
@@ -373,18 +374,17 @@ export function AgentPanel() {
             <label className="block font-pixel text-pixel-xs text-beige/70 mb-2">
               Select Ticket
             </label>
-            <select
-              value={selectedTicketId}
-              onChange={(e) => setSelectedTicketId(e.target.value)}
-              className="pixel-input w-full"
-            >
-              <option value="">-- Select a ticket --</option>
-              {pendingTickets.map((ticket) => (
-                <option key={ticket.id} value={ticket.id}>
-                  {ticket.title.slice(0, 50)}...
-                </option>
-              ))}
-            </select>
+            <PixelSelect
+              options={pendingTickets.map((ticket) => ({
+                value: ticket.id,
+                label: ticket.title.length > 50 ? `${ticket.title.slice(0, 50)}...` : ticket.title,
+                icon: ticket.ticketType === 'bug' ? '\uD83D\uDC1B' : ticket.ticketType === 'feature' ? '\u2694\uFE0F' : '\uD83D\uDCCB',
+              }))}
+              value={selectedTicketId || null}
+              onChange={(val) => setSelectedTicketId(val || '')}
+              placeholder="-- Select a ticket --"
+              searchPlaceholder="Search tickets..."
+            />
           </div>
           <button
             onClick={handleEnhance}
@@ -489,22 +489,23 @@ export function AgentPanel() {
               placeholder="Implement login and registration with email/password..."
             />
           </div>
-          <div>
+          <div className="max-w-[200px]">
             <label className="block font-pixel text-pixel-xs text-beige/70 mb-2">
               Type
             </label>
-            <select
+            <PixelSelect
+              options={[
+                { value: 'feature', label: 'Feature', icon: '\u2694\uFE0F' },
+                { value: 'bug', label: 'Bug', icon: '\uD83D\uDC1B' },
+                { value: 'improvement', label: 'Improvement', icon: '\u2B06\uFE0F' },
+                { value: 'task', label: 'Task', icon: '\uD83D\uDCCB' },
+              ]}
               value={suggestionInput.ticketType}
-              onChange={(e) =>
-                setSuggestionInput((prev) => ({ ...prev, ticketType: e.target.value }))
+              onChange={(val) =>
+                setSuggestionInput((prev) => ({ ...prev, ticketType: val || 'feature' }))
               }
-              className="pixel-input w-full max-w-[200px]"
-            >
-              <option value="feature">Feature</option>
-              <option value="bug">Bug</option>
-              <option value="improvement">Improvement</option>
-              <option value="task">Task</option>
-            </select>
+              searchable={false}
+            />
           </div>
           <button
             onClick={handleGetSuggestions}

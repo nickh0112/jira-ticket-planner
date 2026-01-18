@@ -19,7 +19,7 @@ interface AppState {
   error: string | null;
   statusFilter: TicketStatus | 'all';
   editingTicket: Ticket | null;
-  activeTab: 'tickets' | 'team' | 'epics' | 'settings' | 'agent';
+  activeTab: 'tickets' | 'team' | 'epics' | 'settings' | 'agent' | 'world';
   toast: { message: string; type: 'success' | 'error' } | null;
 
   // Actions
@@ -40,7 +40,7 @@ interface AppState {
   setError: (error: string | null) => void;
   setStatusFilter: (filter: TicketStatus | 'all') => void;
   setEditingTicket: (ticket: Ticket | null) => void;
-  setActiveTab: (tab: 'tickets' | 'team' | 'epics' | 'settings' | 'agent') => void;
+  setActiveTab: (tab: 'tickets' | 'team' | 'epics' | 'settings' | 'agent' | 'world') => void;
   showToast: (message: string, type: 'success' | 'error') => void;
   hideToast: () => void;
 }

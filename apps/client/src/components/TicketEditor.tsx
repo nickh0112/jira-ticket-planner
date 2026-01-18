@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore';
 import { updateTicket, deleteTicket, updateTicketSkillStatus } from '../utils/api';
 import { SkillBadge } from './SkillBadge';
 import { AssigneePicker } from './AssigneePicker';
+import { PixelSelect } from './PixelSelect';
 
 const ticketTypes: { value: TicketType; label: string; icon: string }[] = [
   { value: 'feature', label: 'Feature', icon: '⚔️' },
@@ -214,44 +215,54 @@ export function TicketEditor() {
               <label className="block font-pixel text-pixel-xs text-beige/70 mb-2">
                 Quest Type
               </label>
-              <select
+              <PixelSelect
+                options={ticketTypes.map((type) => ({
+                  value: type.value,
+                  label: type.label,
+                  icon: type.icon,
+                }))}
                 value={formData.ticketType || 'task'}
-                onChange={(e) =>
+                onChange={(val) =>
                   setFormData((prev) => ({
                     ...prev,
-                    ticketType: e.target.value as TicketType,
+                    ticketType: (val || 'task') as TicketType,
                   }))
                 }
-                className="pixel-input w-full"
-              >
-                {ticketTypes.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.icon} {type.label}
-                  </option>
-                ))}
-              </select>
+                searchable={false}
+              />
             </div>
 
             <div>
               <label className="block font-pixel text-pixel-xs text-beige/70 mb-2">
                 Rarity
               </label>
-              <select
+              <PixelSelect
+                options={priorities.map((p) => ({
+                  value: p.value,
+                  label: p.label,
+                  icon: '\u2605',
+                }))}
                 value={formData.priority || 'medium'}
-                onChange={(e) =>
+                onChange={(val) =>
                   setFormData((prev) => ({
                     ...prev,
-                    priority: e.target.value as TicketPriority,
+                    priority: (val || 'medium') as TicketPriority,
                   }))
                 }
-                className="pixel-input w-full"
-              >
-                {priorities.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    ★ {p.label}
-                  </option>
-                ))}
-              </select>
+                searchable={false}
+                renderOption={(option) => (
+                  <span className={`flex items-center gap-2 ${priorities.find(p => p.value === option.value)?.rarity || ''}`}>
+                    <span>{option.icon}</span>
+                    <span>{option.label}</span>
+                  </span>
+                )}
+                renderSelected={(option) => (
+                  <span className={`flex items-center gap-2 ${priorities.find(p => p.value === option.value)?.rarity || ''}`}>
+                    <span>{option.icon}</span>
+                    <span>{option.label}</span>
+                  </span>
+                )}
+              />
             </div>
           </div>
 
@@ -261,23 +272,24 @@ export function TicketEditor() {
               <label className="block font-pixel text-pixel-xs text-beige/70 mb-2">
                 Campaign
               </label>
-              <select
-                value={formData.epicId || ''}
-                onChange={(e) =>
+              <PixelSelect
+                options={epics.map((epic) => ({
+                  value: epic.id,
+                  label: `${epic.key} - ${epic.name}`,
+                  icon: '\uD83C\uDFF0',
+                }))}
+                value={formData.epicId || null}
+                onChange={(val) =>
                   setFormData((prev) => ({
                     ...prev,
-                    epicId: e.target.value || null,
+                    epicId: val,
                   }))
                 }
-                className="pixel-input w-full"
-              >
-                <option value="">No campaign</option>
-                {epics.map((epic) => (
-                  <option key={epic.id} value={epic.id}>
-                    🏰 {epic.key} - {epic.name}
-                  </option>
-                ))}
-              </select>
+                allowClear
+                clearLabel="No campaign"
+                placeholder="Select campaign..."
+                searchPlaceholder="Search campaigns..."
+              />
             </div>
 
             <div>

@@ -1,9 +1,13 @@
+export type MemberType = 'human' | 'ai';
+
 export interface TeamMember {
   id: string;
   name: string;
   role: string;
   skills: string[];
   jiraUsername?: string;
+  memberType: MemberType;
+  position?: { x: number; y: number };
   createdAt: string;
   updatedAt: string;
 }

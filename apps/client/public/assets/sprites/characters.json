@@ -1,0 +1,85 @@
+{
+  "meta": {
+    "image": "characters.png",
+    "size": { "w": 384, "h": 672 },
+    "scale": "1"
+  },
+  "frames": {
+    "knight_idle": {
+      "frame": { "x": 0, "y": 128, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "knight_walk1": {
+      "frame": { "x": 32, "y": 128, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "knight_walk2": {
+      "frame": { "x": 64, "y": 128, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "wizard_idle": {
+      "frame": { "x": 0, "y": 288, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "wizard_walk1": {
+      "frame": { "x": 32, "y": 288, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "wizard_walk2": {
+      "frame": { "x": 64, "y": 288, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "paladin_idle": {
+      "frame": { "x": 0, "y": 192, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "paladin_walk1": {
+      "frame": { "x": 32, "y": 192, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "paladin_walk2": {
+      "frame": { "x": 64, "y": 192, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "ranger_idle": {
+      "frame": { "x": 0, "y": 224, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "ranger_walk1": {
+      "frame": { "x": 32, "y": 224, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "ranger_walk2": {
+      "frame": { "x": 64, "y": 224, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "golem_idle": {
+      "frame": { "x": 0, "y": 32, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "golem_walk1": {
+      "frame": { "x": 32, "y": 32, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    },
+    "golem_walk2": {
+      "frame": { "x": 64, "y": 32, "w": 32, "h": 32 },
+      "sourceSize": { "w": 32, "h": 32 }
+    }
+  },
+  "roleMapping": {
+    "frontend": "wizard",
+    "ui": "wizard",
+    "backend": "knight",
+    "api": "knight",
+    "fullstack": "paladin",
+    "full stack": "paladin",
+    "design": "ranger",
+    "qa": "ranger",
+    "test": "ranger",
+    "devops": "knight",
+    "ops": "knight",
+    "ai": "golem",
+    "ml": "golem",
+    "default": "knight"
+  }
+}

@@ -11,12 +11,15 @@ import { Toast } from './components/Toast';
 import { XPBar } from './components/XPBar';
 import { XPPopup } from './components/XPPopup';
 import { LevelUpModal } from './components/LevelUpModal';
+import { MemberLevelUpModal } from './components/MemberLevelUpModal';
+import { RTSWorldView } from './components/rts/RTSWorldView';
 import { getTickets, getTeamMembers, getEpics } from './utils/api';
 
 const tabs = [
   { key: 'tickets' as const, label: 'Quests', icon: '📜' },
   { key: 'team' as const, label: 'Squad', icon: '⚔️' },
   { key: 'epics' as const, label: 'Campaigns', icon: '🏰' },
+  { key: 'world' as const, label: 'World', icon: '🗺️' },
   { key: 'agent' as const, label: 'AI Agent', icon: '🤖' },
   { key: 'settings' as const, label: 'Settings', icon: '⚙️' },
 ];
@@ -110,6 +113,8 @@ export default function App() {
 
         {activeTab === 'agent' && <AgentPanel />}
 
+        {activeTab === 'world' && <RTSWorldView />}
+
         {activeTab === 'settings' && <JiraSettings />}
       </main>
 
@@ -118,6 +123,7 @@ export default function App() {
       <Toast />
       <XPPopup />
       <LevelUpModal />
+      <MemberLevelUpModal />
     </div>
   );
 }

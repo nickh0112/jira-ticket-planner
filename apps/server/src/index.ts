@@ -8,12 +8,15 @@ import { mkdirSync, existsSync } from 'fs';
 import { createStorageService } from './services/storageService.js';
 import { createJiraService } from './services/jiraService.js';
 import { createAgentService } from './services/agentService.js';
+import { createJiraSyncService } from './services/jiraSyncService.js';
 import { createParseRouter } from './routes/parse.js';
 import { createTicketsRouter } from './routes/tickets.js';
 import { createTeamRouter } from './routes/team.js';
 import { createEpicsRouter } from './routes/epics.js';
 import { createJiraRouter } from './routes/jira.js';
 import { createAgentRouter } from './routes/agent.js';
+import { createSyncRouter } from './routes/sync.js';
+import { createWorldRouter, createTeamExtensionRouter } from './routes/world.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -33,9 +36,10 @@ if (!existsSync(dataDir)) {
 // Initialize storage
 const storage = createStorageService(DATABASE_PATH);
 
-// Initialize Jira and Agent services
+// Initialize Jira, Agent, and Sync services
 const jiraService = createJiraService();
 const agentService = createAgentService({ storage, jiraService });
+const syncService = createJiraSyncService({ storage, jiraService });
 
 // Initialize Express
 const app = express();
@@ -48,9 +52,12 @@ app.use(express.json({ limit: '10mb' }));
 app.use('/api/parse', createParseRouter(storage, agentService));
 app.use('/api/tickets', createTicketsRouter(storage));
 app.use('/api/team', createTeamRouter(storage));
+app.use('/api/team', createTeamExtensionRouter(storage)); // RTS extensions
 app.use('/api/epics', createEpicsRouter(storage));
 app.use('/api/jira', createJiraRouter(storage));
 app.use('/api/agent', createAgentRouter(agentService));
+app.use('/api/sync', createSyncRouter(storage, syncService));
+app.use('/api/world', createWorldRouter(storage));
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -66,17 +73,22 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 // Start server
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
+
+  // Start auto-sync if enabled
+  syncService.startAutoSync();
 });
 
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\nShutting down...');
+  syncService.stopAutoSync();
   storage.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   console.log('\nShutting down...');
+  syncService.stopAutoSync();
   storage.close();
   process.exit(0);
 });

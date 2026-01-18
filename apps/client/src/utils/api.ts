@@ -24,6 +24,15 @@ import type {
   AssigneeSuggestion,
   AgentOptions,
   EnhancedTicket,
+  WorldConfig,
+  WorldState,
+  CampaignRegion,
+  MemberProgress,
+  JiraSyncState,
+  LevelUpEvent,
+  UpdateWorldConfigInput,
+  CreateCampaignRegionInput,
+  UpdateJiraSyncConfigInput,
 } from '@jira-planner/shared';
 
 const API_BASE = '/api';
@@ -326,4 +335,160 @@ export async function updateTicketSkillStatus(
     method: 'PATCH',
     body: JSON.stringify({ skill, status }),
   });
+}
+
+// ============================================================================
+// World API
+// ============================================================================
+
+// Get world configuration
+export async function getWorldConfig(): Promise<WorldConfig> {
+  return fetchApi<WorldConfig>('/world/config');
+}
+
+// Update world configuration
+export async function updateWorldConfig(input: UpdateWorldConfigInput): Promise<WorldConfig> {
+  return fetchApi<WorldConfig>('/world/config', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+// Get full world state
+export async function getWorldState(): Promise<WorldState> {
+  return fetchApi<WorldState>('/world/state');
+}
+
+// Get campaign regions
+export async function getCampaignRegions(): Promise<CampaignRegion[]> {
+  return fetchApi<CampaignRegion[]>('/world/regions');
+}
+
+// Create a campaign region
+export async function createCampaignRegion(input: CreateCampaignRegionInput): Promise<CampaignRegion> {
+  return fetchApi<CampaignRegion>('/world/regions', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+// Update a campaign region
+export async function updateCampaignRegion(
+  id: string,
+  input: Partial<CreateCampaignRegionInput>
+): Promise<CampaignRegion> {
+  return fetchApi<CampaignRegion>(`/world/regions/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+// Delete a campaign region
+export async function deleteCampaignRegion(id: string): Promise<void> {
+  await fetchApi<{ deleted: true }>(`/world/regions/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+// Auto-generate regions for all epics
+export async function autoGenerateRegions(): Promise<{ created: number; regions: CampaignRegion[] }> {
+  return fetchApi<{ created: number; regions: CampaignRegion[] }>('/world/regions/auto-generate', {
+    method: 'POST',
+  });
+}
+
+// Update member position
+export async function updateMemberPosition(
+  memberId: string,
+  position: { x: number; y: number }
+): Promise<TeamMember> {
+  return fetchApi<TeamMember>(`/team/${memberId}/position`, {
+    method: 'PUT',
+    body: JSON.stringify(position),
+  });
+}
+
+// Get member progress
+export async function getMemberProgress(memberId: string): Promise<MemberProgress> {
+  return fetchApi<MemberProgress>(`/team/${memberId}/progress`);
+}
+
+// Get team leaderboard
+export async function getTeamLeaderboard(): Promise<{
+  id: string;
+  name: string;
+  role: string;
+  xp: number;
+  level: number;
+  title: string;
+  ticketsCompleted: number;
+}[]> {
+  return fetchApi('/team/leaderboard');
+}
+
+// ============================================================================
+// Sync API
+// ============================================================================
+
+// Get sync status
+export async function getSyncStatus(): Promise<{
+  isRunning: boolean;
+  syncState: JiraSyncState;
+  hasTimer: boolean;
+}> {
+  return fetchApi('/sync/status');
+}
+
+// Update sync configuration
+export async function updateSyncConfig(input: UpdateJiraSyncConfigInput): Promise<JiraSyncState> {
+  return fetchApi<JiraSyncState>('/sync/config', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+// Trigger manual sync
+export async function triggerSync(): Promise<{
+  success: boolean;
+  ticketsProcessed: number;
+  xpAwarded: number;
+  error?: string;
+}> {
+  return fetchApi('/sync/trigger', {
+    method: 'POST',
+  });
+}
+
+// Get leaderboard from sync endpoint
+export async function getSyncLeaderboard(): Promise<(MemberProgress & {
+  memberName: string;
+  memberRole: string;
+})[]> {
+  return fetchApi('/sync/leaderboard');
+}
+
+// Get unacknowledged level-up events
+export async function getUnacknowledgedLevelUps(): Promise<LevelUpEvent[]> {
+  return fetchApi('/sync/level-ups');
+}
+
+// Acknowledge a level-up event
+export async function acknowledgeLevelUp(id: string): Promise<void> {
+  await fetchApi<{ acknowledged: true }>(`/sync/level-ups/${id}/acknowledge`, {
+    method: 'POST',
+  });
+}
+
+// Get ticket completions
+export async function getTicketCompletions(memberId?: string): Promise<{
+  id: string;
+  jiraKey: string;
+  teamMemberId: string | null;
+  completedAt: string;
+  xpAwarded: number;
+  completionSource: 'jira_sync' | 'manual';
+  createdAt: string;
+}[]> {
+  const params = memberId ? `?memberId=${memberId}` : '';
+  return fetchApi(`/sync/completions${params}`);
 }

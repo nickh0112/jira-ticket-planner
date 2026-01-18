@@ -22,6 +22,16 @@ import type {
   EpicCategory,
   TicketEnhancements,
   EpicSuggestion,
+  MemberProgress,
+  JiraSyncState,
+  WorldConfig,
+  CampaignRegion,
+  TicketCompletion,
+  LevelUpEvent,
+  CreateCampaignRegionInput,
+  UpdateWorldConfigInput,
+  UpdateJiraSyncConfigInput,
+  UpdateMemberPositionInput,
 } from '@jira-planner/shared';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -104,6 +114,32 @@ class StorageService {
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     `);
+
+    // Add RTS-related columns to team_members
+    const teamMemberColumns = this.db.prepare("PRAGMA table_info(team_members)").all() as { name: string }[];
+    const teamMemberColumnNames = teamMemberColumns.map((c) => c.name);
+
+    if (!teamMemberColumnNames.includes('member_type')) {
+      this.db.exec("ALTER TABLE team_members ADD COLUMN member_type TEXT NOT NULL DEFAULT 'human'");
+    }
+    if (!teamMemberColumnNames.includes('position_x')) {
+      this.db.exec('ALTER TABLE team_members ADD COLUMN position_x REAL');
+    }
+    if (!teamMemberColumnNames.includes('position_y')) {
+      this.db.exec('ALTER TABLE team_members ADD COLUMN position_y REAL');
+    }
+
+    // Initialize world_config with default if not exists
+    const worldConfigExists = this.db.prepare("SELECT COUNT(*) as count FROM world_config WHERE id = 'default'").get() as { count: number };
+    if (worldConfigExists.count === 0) {
+      this.db.exec("INSERT INTO world_config (id) VALUES ('default')");
+    }
+
+    // Initialize jira_sync_state singleton if not exists
+    const syncStateExists = this.db.prepare("SELECT COUNT(*) as count FROM jira_sync_state WHERE id = 'singleton'").get() as { count: number };
+    if (syncStateExists.count === 0) {
+      this.db.exec("INSERT INTO jira_sync_state (id) VALUES ('singleton')");
+    }
   }
 
   // Ticket methods
@@ -338,6 +374,10 @@ class StorageService {
       role: row.role,
       skills: JSON.parse(row.skills),
       jiraUsername: row.jira_username ?? undefined,
+      memberType: row.member_type || 'human',
+      position: row.position_x != null && row.position_y != null
+        ? { x: row.position_x, y: row.position_y }
+        : undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -921,6 +961,452 @@ class StorageService {
 
     const stmt = this.db.prepare(`UPDATE pending_epic_proposals SET ${updateFields.join(', ')} WHERE id = ?`);
     stmt.run(...params);
+  }
+
+  // ============================================================================
+  // Member Progress Methods
+  // ============================================================================
+
+  getMemberProgress(teamMemberId: string): MemberProgress | null {
+    const stmt = this.db.prepare('SELECT * FROM member_progress WHERE team_member_id = ?');
+    const row = stmt.get(teamMemberId) as any;
+    return row ? this.mapMemberProgressRow(row) : null;
+  }
+
+  getAllMemberProgress(): MemberProgress[] {
+    const stmt = this.db.prepare('SELECT * FROM member_progress ORDER BY xp DESC');
+    const rows = stmt.all() as any[];
+    return rows.map(this.mapMemberProgressRow);
+  }
+
+  getOrCreateMemberProgress(teamMemberId: string): MemberProgress {
+    let progress = this.getMemberProgress(teamMemberId);
+    if (!progress) {
+      const id = uuidv4();
+      const now = new Date().toISOString();
+      const stmt = this.db.prepare(`
+        INSERT INTO member_progress (id, team_member_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?)
+      `);
+      stmt.run(id, teamMemberId, now, now);
+      progress = this.getMemberProgress(teamMemberId)!;
+    }
+    return progress;
+  }
+
+  updateMemberProgress(teamMemberId: string, updates: { xp?: number; level?: number; title?: string; ticketsCompleted?: number }): MemberProgress | null {
+    const existing = this.getOrCreateMemberProgress(teamMemberId);
+    if (!existing) return null;
+
+    const updateFields: string[] = [];
+    const params: any[] = [];
+
+    if (updates.xp !== undefined) {
+      updateFields.push('xp = ?');
+      params.push(updates.xp);
+    }
+    if (updates.level !== undefined) {
+      updateFields.push('level = ?');
+      params.push(updates.level);
+    }
+    if (updates.title !== undefined) {
+      updateFields.push('title = ?');
+      params.push(updates.title);
+    }
+    if (updates.ticketsCompleted !== undefined) {
+      updateFields.push('tickets_completed = ?');
+      params.push(updates.ticketsCompleted);
+    }
+
+    if (updateFields.length === 0) return existing;
+
+    updateFields.push('updated_at = ?');
+    params.push(new Date().toISOString());
+    params.push(teamMemberId);
+
+    const stmt = this.db.prepare(`UPDATE member_progress SET ${updateFields.join(', ')} WHERE team_member_id = ?`);
+    stmt.run(...params);
+    return this.getMemberProgress(teamMemberId);
+  }
+
+  addMemberXP(teamMemberId: string, amount: number): MemberProgress {
+    const progress = this.getOrCreateMemberProgress(teamMemberId);
+    const newXP = progress.xp + amount;
+    const { level, title } = this.calculateLevelFromXP(newXP);
+
+    const didLevelUp = level > progress.level;
+
+    this.updateMemberProgress(teamMemberId, { xp: newXP, level, title });
+
+    if (didLevelUp) {
+      this.createLevelUpEvent('member', teamMemberId, progress.level, level, title);
+    }
+
+    return this.getMemberProgress(teamMemberId)!;
+  }
+
+  private calculateLevelFromXP(xp: number): { level: number; title: string } {
+    const levels = [
+      { level: 1, xp: 0, title: 'Recruit' },
+      { level: 2, xp: 200, title: 'Squire' },
+      { level: 3, xp: 500, title: 'Adventurer' },
+      { level: 4, xp: 1000, title: 'Veteran' },
+      { level: 5, xp: 2000, title: 'Champion' },
+      { level: 6, xp: 4000, title: 'Hero' },
+      { level: 7, xp: 7000, title: 'Legend' },
+      { level: 8, xp: 10000, title: 'Mythic' },
+      { level: 9, xp: 15000, title: 'Paragon' },
+      { level: 10, xp: 25000, title: 'Ascended' },
+    ];
+
+    for (let i = levels.length - 1; i >= 0; i--) {
+      if (xp >= levels[i].xp) {
+        return { level: levels[i].level, title: levels[i].title };
+      }
+    }
+    return { level: 1, title: 'Recruit' };
+  }
+
+  private mapMemberProgressRow(row: any): MemberProgress {
+    return {
+      id: row.id,
+      teamMemberId: row.team_member_id,
+      xp: row.xp,
+      level: row.level,
+      title: row.title,
+      ticketsCompleted: row.tickets_completed,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  // ============================================================================
+  // Jira Sync State Methods
+  // ============================================================================
+
+  getJiraSyncState(): JiraSyncState {
+    const stmt = this.db.prepare("SELECT * FROM jira_sync_state WHERE id = 'singleton'");
+    const row = stmt.get() as any;
+    return this.mapJiraSyncStateRow(row);
+  }
+
+  updateJiraSyncState(updates: UpdateJiraSyncConfigInput & {
+    lastSyncAt?: string | null;
+    lastSuccessfulSyncAt?: string | null;
+    errorCount?: number;
+    lastError?: string | null;
+  }): JiraSyncState {
+    const updateFields: string[] = [];
+    const params: any[] = [];
+
+    if (updates.syncIntervalMs !== undefined) {
+      updateFields.push('sync_interval_ms = ?');
+      params.push(updates.syncIntervalMs);
+    }
+    if (updates.syncEnabled !== undefined) {
+      updateFields.push('sync_enabled = ?');
+      params.push(updates.syncEnabled ? 1 : 0);
+    }
+    if (updates.baselineDate !== undefined) {
+      updateFields.push('baseline_date = ?');
+      params.push(updates.baselineDate);
+    }
+    if (updates.lastSyncAt !== undefined) {
+      updateFields.push('last_sync_at = ?');
+      params.push(updates.lastSyncAt);
+    }
+    if (updates.lastSuccessfulSyncAt !== undefined) {
+      updateFields.push('last_successful_sync_at = ?');
+      params.push(updates.lastSuccessfulSyncAt);
+    }
+    if (updates.errorCount !== undefined) {
+      updateFields.push('error_count = ?');
+      params.push(updates.errorCount);
+    }
+    if (updates.lastError !== undefined) {
+      updateFields.push('last_error = ?');
+      params.push(updates.lastError);
+    }
+
+    if (updateFields.length === 0) return this.getJiraSyncState();
+
+    updateFields.push('updated_at = ?');
+    params.push(new Date().toISOString());
+
+    const stmt = this.db.prepare(`UPDATE jira_sync_state SET ${updateFields.join(', ')} WHERE id = 'singleton'`);
+    stmt.run(...params);
+    return this.getJiraSyncState();
+  }
+
+  private mapJiraSyncStateRow(row: any): JiraSyncState {
+    return {
+      id: row.id,
+      lastSyncAt: row.last_sync_at ?? null,
+      lastSuccessfulSyncAt: row.last_successful_sync_at ?? null,
+      syncIntervalMs: row.sync_interval_ms,
+      syncEnabled: Boolean(row.sync_enabled),
+      baselineDate: row.baseline_date ?? null,
+      errorCount: row.error_count,
+      lastError: row.last_error ?? null,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  // ============================================================================
+  // World Config Methods
+  // ============================================================================
+
+  getWorldConfig(): WorldConfig {
+    const stmt = this.db.prepare("SELECT * FROM world_config WHERE id = 'default'");
+    const row = stmt.get() as any;
+    return this.mapWorldConfigRow(row);
+  }
+
+  updateWorldConfig(updates: UpdateWorldConfigInput): WorldConfig {
+    const updateFields: string[] = [];
+    const params: any[] = [];
+
+    if (updates.width !== undefined) {
+      updateFields.push('width = ?');
+      params.push(updates.width);
+    }
+    if (updates.height !== undefined) {
+      updateFields.push('height = ?');
+      params.push(updates.height);
+    }
+    if (updates.basecampX !== undefined) {
+      updateFields.push('basecamp_x = ?');
+      params.push(updates.basecampX);
+    }
+    if (updates.basecampY !== undefined) {
+      updateFields.push('basecamp_y = ?');
+      params.push(updates.basecampY);
+    }
+
+    if (updateFields.length === 0) return this.getWorldConfig();
+
+    updateFields.push('updated_at = ?');
+    params.push(new Date().toISOString());
+
+    const stmt = this.db.prepare(`UPDATE world_config SET ${updateFields.join(', ')} WHERE id = 'default'`);
+    stmt.run(...params);
+    return this.getWorldConfig();
+  }
+
+  private mapWorldConfigRow(row: any): WorldConfig {
+    return {
+      id: row.id,
+      width: row.width,
+      height: row.height,
+      basecamp: { x: row.basecamp_x, y: row.basecamp_y },
+      updatedAt: row.updated_at,
+    };
+  }
+
+  // ============================================================================
+  // Campaign Region Methods
+  // ============================================================================
+
+  getCampaignRegions(): CampaignRegion[] {
+    const stmt = this.db.prepare('SELECT * FROM campaign_regions ORDER BY created_at');
+    const rows = stmt.all() as any[];
+    return rows.map(this.mapCampaignRegionRow);
+  }
+
+  getCampaignRegion(id: string): CampaignRegion | null {
+    const stmt = this.db.prepare('SELECT * FROM campaign_regions WHERE id = ?');
+    const row = stmt.get(id) as any;
+    return row ? this.mapCampaignRegionRow(row) : null;
+  }
+
+  getCampaignRegionByEpic(epicId: string): CampaignRegion | null {
+    const stmt = this.db.prepare('SELECT * FROM campaign_regions WHERE epic_id = ?');
+    const row = stmt.get(epicId) as any;
+    return row ? this.mapCampaignRegionRow(row) : null;
+  }
+
+  createCampaignRegion(input: CreateCampaignRegionInput): CampaignRegion {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO campaign_regions (id, epic_id, x, y, width, height, color, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(id, input.epicId, input.x, input.y, input.width, input.height, input.color || '#4A4136', now);
+    return this.getCampaignRegion(id)!;
+  }
+
+  updateCampaignRegion(id: string, updates: Partial<CreateCampaignRegionInput>): CampaignRegion | null {
+    const existing = this.getCampaignRegion(id);
+    if (!existing) return null;
+
+    const updateFields: string[] = [];
+    const params: any[] = [];
+
+    if (updates.x !== undefined) {
+      updateFields.push('x = ?');
+      params.push(updates.x);
+    }
+    if (updates.y !== undefined) {
+      updateFields.push('y = ?');
+      params.push(updates.y);
+    }
+    if (updates.width !== undefined) {
+      updateFields.push('width = ?');
+      params.push(updates.width);
+    }
+    if (updates.height !== undefined) {
+      updateFields.push('height = ?');
+      params.push(updates.height);
+    }
+    if (updates.color !== undefined) {
+      updateFields.push('color = ?');
+      params.push(updates.color);
+    }
+
+    if (updateFields.length === 0) return existing;
+
+    params.push(id);
+    const stmt = this.db.prepare(`UPDATE campaign_regions SET ${updateFields.join(', ')} WHERE id = ?`);
+    stmt.run(...params);
+    return this.getCampaignRegion(id);
+  }
+
+  deleteCampaignRegion(id: string): boolean {
+    const stmt = this.db.prepare('DELETE FROM campaign_regions WHERE id = ?');
+    const result = stmt.run(id);
+    return result.changes > 0;
+  }
+
+  private mapCampaignRegionRow(row: any): CampaignRegion {
+    return {
+      id: row.id,
+      epicId: row.epic_id,
+      bounds: { x: row.x, y: row.y, width: row.width, height: row.height },
+      color: row.color,
+      createdAt: row.created_at,
+    };
+  }
+
+  // ============================================================================
+  // Ticket Completion Methods
+  // ============================================================================
+
+  getTicketCompletion(jiraKey: string): TicketCompletion | null {
+    const stmt = this.db.prepare('SELECT * FROM ticket_completions WHERE jira_key = ?');
+    const row = stmt.get(jiraKey) as any;
+    return row ? this.mapTicketCompletionRow(row) : null;
+  }
+
+  getTicketCompletions(teamMemberId?: string): TicketCompletion[] {
+    let query = 'SELECT * FROM ticket_completions';
+    const params: any[] = [];
+
+    if (teamMemberId) {
+      query += ' WHERE team_member_id = ?';
+      params.push(teamMemberId);
+    }
+
+    query += ' ORDER BY completed_at DESC';
+
+    const stmt = this.db.prepare(query);
+    const rows = stmt.all(...params) as any[];
+    return rows.map(this.mapTicketCompletionRow);
+  }
+
+  recordTicketCompletion(jiraKey: string, teamMemberId: string | null, xpAwarded: number, source: 'jira_sync' | 'manual'): TicketCompletion | null {
+    // Check if already recorded
+    const existing = this.getTicketCompletion(jiraKey);
+    if (existing) return null; // Already recorded, prevent duplicate XP
+
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO ticket_completions (id, jira_key, team_member_id, completed_at, xp_awarded, completion_source, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(id, jiraKey, teamMemberId, now, xpAwarded, source, now);
+
+    // Update member progress if we have an assignee
+    if (teamMemberId) {
+      const progress = this.getOrCreateMemberProgress(teamMemberId);
+      this.updateMemberProgress(teamMemberId, { ticketsCompleted: progress.ticketsCompleted + 1 });
+      this.addMemberXP(teamMemberId, xpAwarded);
+    }
+
+    return this.getTicketCompletion(jiraKey);
+  }
+
+  private mapTicketCompletionRow(row: any): TicketCompletion {
+    return {
+      id: row.id,
+      jiraKey: row.jira_key,
+      teamMemberId: row.team_member_id ?? null,
+      completedAt: row.completed_at,
+      xpAwarded: row.xp_awarded,
+      completionSource: row.completion_source,
+      createdAt: row.created_at,
+    };
+  }
+
+  // ============================================================================
+  // Level Up Event Methods
+  // ============================================================================
+
+  createLevelUpEvent(entityType: 'member' | 'ai', entityId: string, oldLevel: number, newLevel: number, newTitle: string): LevelUpEvent {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO level_up_events (id, entity_type, entity_id, old_level, new_level, new_title, triggered_at, acknowledged)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+    `);
+    stmt.run(id, entityType, entityId, oldLevel, newLevel, newTitle, now);
+    return this.getLevelUpEvent(id)!;
+  }
+
+  getLevelUpEvent(id: string): LevelUpEvent | null {
+    const stmt = this.db.prepare('SELECT * FROM level_up_events WHERE id = ?');
+    const row = stmt.get(id) as any;
+    return row ? this.mapLevelUpEventRow(row) : null;
+  }
+
+  getUnacknowledgedLevelUpEvents(): LevelUpEvent[] {
+    const stmt = this.db.prepare('SELECT * FROM level_up_events WHERE acknowledged = 0 ORDER BY triggered_at ASC');
+    const rows = stmt.all() as any[];
+    return rows.map(this.mapLevelUpEventRow);
+  }
+
+  acknowledgeLevelUpEvent(id: string): void {
+    const stmt = this.db.prepare('UPDATE level_up_events SET acknowledged = 1 WHERE id = ?');
+    stmt.run(id);
+  }
+
+  private mapLevelUpEventRow(row: any): LevelUpEvent {
+    return {
+      id: row.id,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      oldLevel: row.old_level,
+      newLevel: row.new_level,
+      newTitle: row.new_title,
+      triggeredAt: row.triggered_at,
+      acknowledged: Boolean(row.acknowledged),
+    };
+  }
+
+  // ============================================================================
+  // Member Position Methods
+  // ============================================================================
+
+  updateMemberPosition(teamMemberId: string, position: UpdateMemberPositionInput): TeamMember | null {
+    const existing = this.getTeamMember(teamMemberId);
+    if (!existing) return null;
+
+    const stmt = this.db.prepare(`
+      UPDATE team_members SET position_x = ?, position_y = ?, updated_at = ? WHERE id = ?
+    `);
+    stmt.run(position.x, position.y, new Date().toISOString(), teamMemberId);
+    return this.getTeamMember(teamMemberId);
   }
 
   close() {

@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { Ticket, JiraSprint, JiraConfig } from '@jira-planner/shared';
 import { getJiraSprints, getCachedSprints, getJiraConfig } from '../utils/api';
 import { useStore } from '../store/useStore';
+import { PixelSelect, PixelSelectOption } from './PixelSelect';
 
 interface SprintSelectModalProps {
   ticket: Ticket;
@@ -66,8 +67,32 @@ export function SprintSelectModal({ ticket, onConfirm, onCancel }: SprintSelectM
     onConfirm(selectedSprintId);
   };
 
-  const activeSprints = sprints.filter((s) => s.state === 'active');
-  const futureSprints = sprints.filter((s) => s.state === 'future');
+  const sprintOptions = useMemo((): PixelSelectOption[] => {
+    const activeSprints = sprints.filter((s) => s.state === 'active');
+    const futureSprints = sprints.filter((s) => s.state === 'future');
+
+    const options: PixelSelectOption[] = [];
+
+    for (const sprint of activeSprints) {
+      options.push({
+        value: String(sprint.id),
+        label: sprint.name,
+        group: 'Active Sprints',
+        icon: '\uD83C\uDFC3',
+      });
+    }
+
+    for (const sprint of futureSprints) {
+      options.push({
+        value: String(sprint.id),
+        label: sprint.name,
+        group: 'Future Sprints',
+        icon: '\uD83D\uDCC5',
+      });
+    }
+
+    return options;
+  }, [sprints]);
 
   const getBoardName = () => {
     if (!config) return 'Board';
@@ -119,35 +144,18 @@ export function SprintSelectModal({ ticket, onConfirm, onCancel }: SprintSelectM
               <span className="font-readable text-beige/70">No sprints available</span>
             </div>
           ) : (
-            <select
-              value={selectedSprintId ?? ''}
-              onChange={(e) =>
-                setSelectedSprintId(e.target.value ? parseInt(e.target.value, 10) : undefined)
+            <PixelSelect
+              options={sprintOptions}
+              value={selectedSprintId !== undefined ? String(selectedSprintId) : null}
+              onChange={(val) =>
+                setSelectedSprintId(val ? parseInt(val, 10) : undefined)
               }
-              className="pixel-input w-full"
-            >
-              <option value="">No sprint (backlog)</option>
-
-              {activeSprints.length > 0 && (
-                <optgroup label="Active Sprints">
-                  {activeSprints.map((sprint) => (
-                    <option key={sprint.id} value={sprint.id}>
-                      {sprint.name}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-
-              {futureSprints.length > 0 && (
-                <optgroup label="Future Sprints">
-                  {futureSprints.map((sprint) => (
-                    <option key={sprint.id} value={sprint.id}>
-                      {sprint.name}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
+              allowClear
+              clearLabel="No sprint (backlog)"
+              placeholder="Select sprint..."
+              searchPlaceholder="Search sprints..."
+              groupOrder={['Active Sprints', 'Future Sprints']}
+            />
           )}
         </div>
 

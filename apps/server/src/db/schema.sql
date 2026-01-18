@@ -135,3 +135,95 @@ CREATE INDEX IF NOT EXISTS idx_epic_categories_epic ON epic_categories(epic_id);
 CREATE INDEX IF NOT EXISTS idx_ticket_enhancements_ticket ON ticket_enhancements(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_pending_epic_proposals_ticket ON pending_epic_proposals(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_pending_epic_proposals_status ON pending_epic_proposals(status);
+
+-- ============================================================================
+-- RTS Team Visualization Tables
+-- ============================================================================
+
+-- Per-member progress tracking
+CREATE TABLE IF NOT EXISTS member_progress (
+  id TEXT PRIMARY KEY,
+  team_member_id TEXT UNIQUE REFERENCES team_members(id) ON DELETE CASCADE,
+  xp INTEGER NOT NULL DEFAULT 0,
+  level INTEGER NOT NULL DEFAULT 1,
+  title TEXT NOT NULL DEFAULT 'Recruit',
+  tickets_completed INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Ticket completion history (prevents duplicate XP)
+CREATE TABLE IF NOT EXISTS ticket_completions (
+  id TEXT PRIMARY KEY,
+  jira_key TEXT NOT NULL UNIQUE,
+  team_member_id TEXT REFERENCES team_members(id) ON DELETE SET NULL,
+  completed_at TEXT NOT NULL,
+  xp_awarded INTEGER NOT NULL DEFAULT 0,
+  completion_source TEXT NOT NULL CHECK (completion_source IN ('jira_sync', 'manual')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Jira sync state
+CREATE TABLE IF NOT EXISTS jira_sync_state (
+  id TEXT PRIMARY KEY DEFAULT 'singleton',
+  last_sync_at TEXT,
+  last_successful_sync_at TEXT,
+  sync_interval_ms INTEGER NOT NULL DEFAULT 300000,
+  sync_enabled INTEGER NOT NULL DEFAULT 0,
+  baseline_date TEXT,
+  error_count INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Level-up event queue (for RTS animations)
+CREATE TABLE IF NOT EXISTS level_up_events (
+  id TEXT PRIMARY KEY,
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('member', 'ai')),
+  entity_id TEXT NOT NULL,
+  old_level INTEGER NOT NULL,
+  new_level INTEGER NOT NULL,
+  new_title TEXT NOT NULL,
+  triggered_at TEXT NOT NULL DEFAULT (datetime('now')),
+  acknowledged INTEGER NOT NULL DEFAULT 0
+);
+
+-- World configuration
+CREATE TABLE IF NOT EXISTS world_config (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  width INTEGER NOT NULL DEFAULT 1200,
+  height INTEGER NOT NULL DEFAULT 800,
+  basecamp_x REAL NOT NULL DEFAULT 100,
+  basecamp_y REAL NOT NULL DEFAULT 400,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Campaign regions (epic territories)
+CREATE TABLE IF NOT EXISTS campaign_regions (
+  id TEXT PRIMARY KEY,
+  epic_id TEXT REFERENCES epics(id) ON DELETE CASCADE,
+  x REAL NOT NULL,
+  y REAL NOT NULL,
+  width REAL NOT NULL,
+  height REAL NOT NULL,
+  color TEXT NOT NULL DEFAULT '#4A4136',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- AI team members (future)
+CREATE TABLE IF NOT EXISTS ai_members (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  persona TEXT NOT NULL,
+  xp INTEGER NOT NULL DEFAULT 0,
+  level INTEGER NOT NULL DEFAULT 1,
+  title TEXT NOT NULL DEFAULT 'Basic Algorithm',
+  actions_completed INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- RTS Tables Indexes
+CREATE INDEX IF NOT EXISTS idx_member_progress_member ON member_progress(team_member_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_completions_member ON ticket_completions(team_member_id);
+CREATE INDEX IF NOT EXISTS idx_level_up_events_unacked ON level_up_events(acknowledged);
+CREATE INDEX IF NOT EXISTS idx_campaign_regions_epic ON campaign_regions(epic_id);
