@@ -7,4 +7,6 @@ export {
   calculateSkillMatchScore,
   findBestEpicMatches,
   findBestAssigneeMatches,
+  getInferredSkillsForTicket,
+  buildEnrichedDescriptionsMap,
 } from './routingModule.js';

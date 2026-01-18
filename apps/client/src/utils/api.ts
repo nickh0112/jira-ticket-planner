@@ -315,3 +315,15 @@ export async function rejectEpicProposal(proposalId: string): Promise<void> {
     method: 'POST',
   });
 }
+
+// Update ticket skill status (accept/reject AI-inferred skill)
+export async function updateTicketSkillStatus(
+  ticketId: string,
+  skill: string,
+  status: 'accepted' | 'rejected'
+): Promise<{ ticket: Ticket }> {
+  return fetchApi<{ ticket: Ticket }>(`/tickets/${ticketId}/skills`, {
+    method: 'PATCH',
+    body: JSON.stringify({ skill, status }),
+  });
+}

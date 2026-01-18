@@ -9,6 +9,7 @@ import type {
   ProcessTranscriptRequest,
   ProcessTranscriptResponse,
   AgentOptions,
+  ReprocessPendingResponse,
 } from '@jira-planner/shared';
 import type { AgentService } from '../services/agentService.js';
 
@@ -198,6 +199,30 @@ export function createAgentRouter(agentService: AgentService) {
       const response: ApiResponse<never> = {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to process tickets',
+      };
+      res.status(500).json(response);
+    }
+  });
+
+  /**
+   * POST /api/agent/reprocess-pending
+   * Reprocess all pending/approved tickets through the assignment logic
+   * Uses learned data to suggest epics and assignees, auto-assigning high-confidence matches
+   */
+  router.post('/reprocess-pending', async (req, res) => {
+    try {
+      const result = await agentService.reprocessPendingTickets();
+
+      const response: ApiResponse<ReprocessPendingResponse> = {
+        success: true,
+        data: result,
+      };
+      res.json(response);
+    } catch (error) {
+      console.error('Reprocess pending error:', error);
+      const response: ApiResponse<never> = {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to reprocess pending tickets',
       };
       res.status(500).json(response);
     }

@@ -9,6 +9,10 @@ import type {
   AgentKnowledgeResponse,
   TicketEnhancements,
   TicketSuggestions,
+  ReprocessPendingResponse,
+  EpicAssignmentResult,
+  AssigneeAssignmentResult,
+  NeedsReviewResult,
 } from '@jira-planner/shared';
 import type { Ticket, CreateTicketInput } from '@jira-planner/shared';
 
@@ -18,6 +22,7 @@ import {
   validateQuality,
   suggestEpic,
   suggestAssignees,
+  buildEnrichedDescriptionsMap,
 } from './agent/index.js';
 
 export interface AgentContext {
@@ -113,8 +118,10 @@ export class AgentService {
   }): Promise<EpicSuggestion> {
     const epics = this.storage.getEpics();
     const epicCategories = this.storage.getEpicCategories();
+    const agentKnowledge = this.storage.getAgentKnowledge();
+    const enrichedDescriptions = buildEnrichedDescriptionsMap(agentKnowledge);
 
-    return suggestEpic(ticket, { epics, epicCategories });
+    return suggestEpic(ticket, { epics, epicCategories, enrichedDescriptions });
   }
 
   /**
@@ -151,6 +158,8 @@ export class AgentService {
     const epics = this.storage.getEpics();
     const inferredSkills = this.storage.getInferredSkills();
     const epicCategories = this.storage.getEpicCategories();
+    const agentKnowledge = this.storage.getAgentKnowledge();
+    const enrichedDescriptions = buildEnrichedDescriptionsMap(agentKnowledge);
 
     const enhancedTickets: EnhancedTicket[] = [];
     const pendingEpicProposals: EpicSuggestion[] = [];
@@ -178,7 +187,7 @@ export class AgentService {
         const suggestions: TicketSuggestions = {
           epicSuggestion: await suggestEpic(
             { title: ticket.title, description: ticket.description, ticketType: ticket.ticketType },
-            { epics, epicCategories }
+            { epics, epicCategories, enrichedDescriptions }
           ),
           assigneeSuggestions: await suggestAssignees(
             { title: ticket.title, description: ticket.description, ticketType: ticket.ticketType },
@@ -217,6 +226,103 @@ export class AgentService {
     }
 
     return { tickets: enhancedTickets, pendingEpicProposals };
+  }
+
+  /**
+   * Reprocess all pending/approved tickets through the assignment logic
+   * Uses learned data to suggest epics and assignees, auto-assigning high-confidence matches
+   */
+  async reprocessPendingTickets(): Promise<ReprocessPendingResponse> {
+    // Fetch all tickets with status 'pending' or 'approved' (not yet created in Jira)
+    const pendingTickets = this.storage.getTickets({ status: 'pending' });
+    const approvedTickets = this.storage.getTickets({ status: 'approved' });
+    const ticketsToProcess = [...pendingTickets, ...approvedTickets];
+
+    const teamMembers = this.storage.getTeamMembers();
+    const epics = this.storage.getEpics();
+    const inferredSkills = this.storage.getInferredSkills();
+    const epicCategories = this.storage.getEpicCategories();
+    const agentKnowledge = this.storage.getAgentKnowledge();
+    const enrichedDescriptions = buildEnrichedDescriptionsMap(agentKnowledge);
+
+    const epicAssignments: EpicAssignmentResult[] = [];
+    const assigneeAssignments: AssigneeAssignmentResult[] = [];
+    const needsReview: NeedsReviewResult[] = [];
+
+    for (const ticket of ticketsToProcess) {
+      // Get epic suggestion (using enriched descriptions for epics with poor descriptions)
+      const epicSuggestion = await suggestEpic(
+        { title: ticket.title, description: ticket.description, ticketType: ticket.ticketType },
+        { epics, epicCategories, enrichedDescriptions }
+      );
+
+      // Get assignee suggestions
+      const assigneeSuggestions = await suggestAssignees(
+        { title: ticket.title, description: ticket.description, ticketType: ticket.ticketType },
+        { teamMembers, inferredSkills }
+      );
+
+      // Process epic assignment
+      if (epicSuggestion.type === 'match' && epicSuggestion.epicId) {
+        const epic = epics.find((e) => e.id === epicSuggestion.epicId);
+        const autoAssigned = epicSuggestion.confidence >= 0.7;
+
+        if (autoAssigned) {
+          this.storage.updateTicket(ticket.id, { epicId: epicSuggestion.epicId });
+        }
+
+        epicAssignments.push({
+          ticketId: ticket.id,
+          epicKey: epic?.key,
+          confidence: epicSuggestion.confidence,
+          autoAssigned,
+        });
+
+        if (!autoAssigned) {
+          needsReview.push({
+            ticketId: ticket.id,
+            reason: `Low confidence epic match (${epicSuggestion.confidence.toFixed(2)})`,
+          });
+        }
+      } else if (epicSuggestion.type === 'create') {
+        needsReview.push({
+          ticketId: ticket.id,
+          reason: 'No matching epic found - new epic proposed',
+        });
+      }
+
+      // Process assignee assignment
+      if (assigneeSuggestions.length > 0) {
+        const topSuggestion = assigneeSuggestions[0];
+        const teamMember = teamMembers.find((m) => m.id === topSuggestion.teamMemberId);
+        const autoAssigned = topSuggestion.confidence >= 0.7;
+
+        if (autoAssigned) {
+          this.storage.updateTicket(ticket.id, { assigneeId: topSuggestion.teamMemberId });
+        }
+
+        assigneeAssignments.push({
+          ticketId: ticket.id,
+          assigneeName: teamMember?.name,
+          confidence: topSuggestion.confidence,
+          autoAssigned,
+        });
+
+        if (!autoAssigned) {
+          needsReview.push({
+            ticketId: ticket.id,
+            reason: `Low confidence assignee match (${topSuggestion.confidence.toFixed(2)})`,
+          });
+        }
+      }
+    }
+
+    return {
+      processed: ticketsToProcess.length,
+      epicAssignments,
+      assigneeAssignments,
+      needsReview,
+    };
   }
 
   /**

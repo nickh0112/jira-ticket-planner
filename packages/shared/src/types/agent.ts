@@ -162,3 +162,30 @@ export interface AgentKnowledgeResponse {
   inferredSkills: InferredSkill[];
   epicCategories: EpicCategory[];
 }
+
+// Reprocess pending tickets response
+export interface EpicAssignmentResult {
+  ticketId: string;
+  epicKey?: string;
+  confidence: number;
+  autoAssigned: boolean;
+}
+
+export interface AssigneeAssignmentResult {
+  ticketId: string;
+  assigneeName?: string;
+  confidence: number;
+  autoAssigned: boolean;
+}
+
+export interface NeedsReviewResult {
+  ticketId: string;
+  reason: string;
+}
+
+export interface ReprocessPendingResponse {
+  processed: number;
+  epicAssignments: EpicAssignmentResult[];
+  assigneeAssignments: AssigneeAssignmentResult[];
+  needsReview: NeedsReviewResult[];
+}

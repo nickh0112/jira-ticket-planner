@@ -419,3 +419,21 @@
   75% { top: 8px; left: 0; }
   100% { top: 0; left: 8px; }
 }
+
+/* Skill badge animations */
+@keyframes skill-pulse {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(255, 215, 0, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(255, 215, 0, 0.7);
+  }
+}
+
+.skill-badge-pending {
+  animation: skill-pulse 2s ease-in-out infinite;
+}
+
+.skill-review-pending {
+  animation: skill-pulse 2s ease-in-out infinite;
+}

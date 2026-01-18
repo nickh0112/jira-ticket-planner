@@ -5,12 +5,14 @@ import type {
   EpicCategory,
   EpicSuggestion,
   AssigneeSuggestion,
+  AgentKnowledge,
 } from '@jira-planner/shared';
-import { suggestEpicForTicket, suggestAssigneesForTicket } from '../claudeService.js';
+import { suggestEpicForTicket, suggestAssigneesForTicket, inferRequiredSkills } from '../claudeService.js';
 
 interface EpicRoutingContext {
   epics: Epic[];
   epicCategories: EpicCategory[];
+  enrichedDescriptions?: Map<string, string>;
 }
 
 interface AssigneeRoutingContext {
@@ -32,11 +34,13 @@ export async function suggestEpic(
   }
 
   // Use AI to find the best match or suggest a new epic
-  return suggestEpicForTicket(ticket, context.epics, context.epicCategories);
+  // Pass enriched descriptions if available for epics with poor descriptions
+  return suggestEpicForTicket(ticket, context.epics, context.epicCategories, context.enrichedDescriptions);
 }
 
 /**
  * Suggest assignees for a ticket based on skills matching
+ * If requiredSkills are not provided, they will be inferred from the ticket content
  */
 export async function suggestAssignees(
   ticket: { title: string; description: string; ticketType: string; requiredSkills?: string[] },
@@ -47,8 +51,49 @@ export async function suggestAssignees(
     return [];
   }
 
-  // Use AI to rank team members by fit
-  return suggestAssigneesForTicket(ticket, context.teamMembers, context.inferredSkills);
+  // Infer required skills if not provided
+  let requiredSkills = ticket.requiredSkills;
+  if (!requiredSkills || requiredSkills.length === 0) {
+    requiredSkills = await inferRequiredSkills(ticket);
+  }
+
+  // Use AI to rank team members by fit, with inferred skills
+  return suggestAssigneesForTicket(
+    { ...ticket, requiredSkills },
+    context.teamMembers,
+    context.inferredSkills
+  );
+}
+
+/**
+ * Infer required skills for a ticket without calling the full suggestion flow
+ * Useful for pre-processing tickets before storage
+ */
+export async function getInferredSkillsForTicket(ticket: {
+  title: string;
+  description: string;
+  ticketType: string;
+}): Promise<string[]> {
+  return inferRequiredSkills(ticket);
+}
+
+/**
+ * Build enriched descriptions map from agent knowledge
+ * @param agentKnowledge - Array of agent knowledge entries
+ * @returns Map of epic ID to enriched description
+ */
+export function buildEnrichedDescriptionsMap(agentKnowledge: AgentKnowledge[]): Map<string, string> {
+  const enrichedDescriptions = new Map<string, string>();
+
+  for (const knowledge of agentKnowledge) {
+    if (knowledge.key.startsWith('epic-') && knowledge.key.endsWith('-enriched-description')) {
+      // Extract epic ID from key: "epic-{epicId}-enriched-description"
+      const epicId = knowledge.key.replace('epic-', '').replace('-enriched-description', '');
+      enrichedDescriptions.set(epicId, knowledge.value);
+    }
+  }
+
+  return enrichedDescriptions;
 }
 
 /**

@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS tickets (
   epic_id TEXT REFERENCES epics(id) ON DELETE SET NULL,
   assignee_id TEXT REFERENCES team_members(id) ON DELETE SET NULL,
   labels TEXT NOT NULL DEFAULT '[]', -- JSON array stored as string
+  required_skills TEXT NOT NULL DEFAULT '[]', -- JSON array of inferred skills needed for this ticket
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'denied', 'created')),
   created_in_jira INTEGER NOT NULL DEFAULT 0,
   jira_key TEXT,

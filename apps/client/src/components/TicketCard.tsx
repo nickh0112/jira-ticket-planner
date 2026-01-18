@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore';
 import { useProgressStore, XP_REWARDS } from '../store/progressStore';
 import { CopyButton } from './CopyButton';
 import { SprintSelectModal } from './SprintSelectModal';
+import { SkillBadge } from './SkillBadge';
 import { formatTicketForJira } from '../utils/formatTicket';
 import { updateTicketStatus, updateTicket, createJiraIssue } from '../utils/api';
 
@@ -222,6 +223,20 @@ export function TicketCard({ ticket }: TicketCardProps) {
                 +{ticket.labels.length - 3}
               </span>
             )}
+          </div>
+        )}
+        {/* Required Skills */}
+        {ticket.requiredSkills && ticket.requiredSkills.length > 0 && (
+          <div className="mt-2">
+            <div className="font-pixel text-pixel-xs text-beige/50 mb-1">⚡ REQUIRED SKILLS</div>
+            <div className="flex flex-wrap gap-1">
+              {ticket.requiredSkills.slice(0, 3).map((skill) => (
+                <SkillBadge key={skill} skill={skill} isInferred={true} />
+              ))}
+              {ticket.requiredSkills.length > 3 && (
+                <span className="text-xs text-beige/50">+{ticket.requiredSkills.length - 3}</span>
+              )}
+            </div>
           </div>
         )}
       </div>

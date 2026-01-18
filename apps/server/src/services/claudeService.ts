@@ -100,19 +100,53 @@ Only return the JSON array, no other text.`;
 
     const tickets = JSON.parse(jsonText) as CreateTicketInput[];
 
-    // Validate the structure
-    return tickets.map((ticket) => ({
-      title: String(ticket.title || ''),
-      description: String(ticket.description || ''),
-      acceptanceCriteria: Array.isArray(ticket.acceptanceCriteria)
-        ? ticket.acceptanceCriteria.map(String)
-        : [],
-      ticketType: validateTicketType(ticket.ticketType),
-      priority: validatePriority(ticket.priority),
-      assigneeId: ticket.assigneeId || null,
-      epicId: ticket.epicId || null,
-      labels: Array.isArray(ticket.labels) ? ticket.labels.map(String) : [],
-    }));
+    // Validate the structure and resolve IDs
+    return tickets.map((ticket) => {
+      // Resolve epicId: could be a key like "FOAM-123" or a UUID
+      let resolvedEpicId: string | null = null;
+      if (ticket.epicId) {
+        // First try exact match on ID
+        const epicById = context.epics.find((e) => e.id === ticket.epicId);
+        if (epicById) {
+          resolvedEpicId = epicById.id;
+        } else {
+          // Try matching by key (e.g., "FOAM-123")
+          const epicByKey = context.epics.find((e) => e.key === ticket.epicId);
+          resolvedEpicId = epicByKey?.id ?? null;
+        }
+      }
+
+      // Resolve assigneeId: could be a name, jiraUsername, or UUID
+      let resolvedAssigneeId: string | null = null;
+      if (ticket.assigneeId) {
+        // First try exact match on ID
+        const memberById = context.teamMembers.find((m) => m.id === ticket.assigneeId);
+        if (memberById) {
+          resolvedAssigneeId = memberById.id;
+        } else {
+          // Try matching by name or jiraUsername
+          const memberByName = context.teamMembers.find(
+            (m) =>
+              m.name.toLowerCase() === ticket.assigneeId?.toLowerCase() ||
+              m.jiraUsername?.toLowerCase() === ticket.assigneeId?.toLowerCase()
+          );
+          resolvedAssigneeId = memberByName?.id ?? null;
+        }
+      }
+
+      return {
+        title: String(ticket.title || ''),
+        description: String(ticket.description || ''),
+        acceptanceCriteria: Array.isArray(ticket.acceptanceCriteria)
+          ? ticket.acceptanceCriteria.map(String)
+          : [],
+        ticketType: validateTicketType(ticket.ticketType),
+        priority: validatePriority(ticket.priority),
+        assigneeId: resolvedAssigneeId,
+        epicId: resolvedEpicId,
+        labels: Array.isArray(ticket.labels) ? ticket.labels.map(String) : [],
+      };
+    });
   } catch (error) {
     console.error('Failed to parse Claude response:', content.text);
     throw new Error('Failed to parse ticket extraction response');
@@ -382,11 +416,13 @@ Only return the JSON array, no other text.`;
 
 /**
  * Suggest an epic for a ticket based on semantic matching
+ * @param enrichedDescriptions - Map of epic ID to enriched description (for epics with poor descriptions)
  */
 export async function suggestEpicForTicket(
   ticket: { title: string; description: string; ticketType: string },
   epics: Epic[],
-  epicCategories: EpicCategory[]
+  epicCategories: EpicCategory[],
+  enrichedDescriptions?: Map<string, string>
 ): Promise<EpicSuggestion> {
   if (epics.length === 0) {
     return createNewEpicProposal(ticket);
@@ -429,7 +465,12 @@ Only return the JSON, no other text.`;
         .filter((c) => c.epicId === e.id)
         .map((c) => `${c.category}: ${c.keywords.join(', ')}`)
         .join('; ');
-      return `- ${e.key}: ${e.name} - ${e.description}${categories ? ` [Categories: ${categories}]` : ''}`;
+      // Use enriched description if epic description is short and enriched version exists
+      const effectiveDescription =
+        e.description.length < 50 && enrichedDescriptions?.has(e.id)
+          ? enrichedDescriptions.get(e.id)!
+          : e.description;
+      return `- ${e.key}: ${e.name} - ${effectiveDescription}${categories ? ` [Categories: ${categories}]` : ''}`;
     })
     .join('\n');
 
@@ -518,6 +559,122 @@ function createNewEpicProposal(ticket: { title: string; description: string }): 
 }
 
 /**
+ * Infer the technical skills required to complete a ticket
+ * Analyzes ticket content to extract required skills for better matching
+ */
+export async function inferRequiredSkills(ticket: {
+  title: string;
+  description: string;
+  ticketType: string;
+}): Promise<string[]> {
+  const systemPrompt = `You are analyzing a JIRA ticket to identify the technical skills required to complete it.
+Based on the ticket title, description, and type, identify what skills would be needed.
+
+Focus on technical skills like:
+- Programming languages (TypeScript, Python, Java, etc.)
+- Frameworks (React, Node.js, Express, etc.)
+- Domains (Authentication, API design, Database, UI/UX, etc.)
+- Tools (AWS, Docker, Kubernetes, etc.)
+- Concepts (Testing, Performance optimization, Security, etc.)
+
+Response format (JSON array of skill names):
+["React", "TypeScript", "API design"]
+
+Only include skills that are clearly needed based on the content. Be conservative - only list skills where there's clear evidence in the ticket.
+Only return the JSON array, no other text.`;
+
+  const response = await getClient().messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 512,
+    system: systemPrompt,
+    messages: [
+      {
+        role: 'user',
+        content: `Ticket:
+Title: ${ticket.title}
+Description: ${ticket.description}
+Type: ${ticket.ticketType}`,
+      },
+    ],
+  });
+
+  const content = response.content[0];
+  if (content.type !== 'text') {
+    return [];
+  }
+
+  try {
+    let jsonText = content.text.trim();
+    if (jsonText.startsWith('```json')) {
+      jsonText = jsonText.slice(7);
+    } else if (jsonText.startsWith('```')) {
+      jsonText = jsonText.slice(3);
+    }
+    if (jsonText.endsWith('```')) {
+      jsonText = jsonText.slice(0, -3);
+    }
+    jsonText = jsonText.trim();
+
+    const skills = JSON.parse(jsonText);
+    return Array.isArray(skills) ? skills.map(String).filter((s) => s.length > 0) : [];
+  } catch (error) {
+    console.error('Failed to parse required skills response:', content.text);
+    return [];
+  }
+}
+
+/**
+ * Generate an enriched description for an epic based on its child tickets
+ * Used when epic descriptions are empty or minimal
+ */
+export async function generateEpicDescription(
+  epicName: string,
+  childTickets: { summary: string; description: string }[]
+): Promise<string> {
+  if (childTickets.length === 0) {
+    return '';
+  }
+
+  const systemPrompt = `You are analyzing child tickets of a JIRA epic to generate a meaningful description.
+Based on the tickets, understand what the epic covers and summarize it.
+
+Write a 2-3 sentence description that captures:
+- The domain/area this epic covers
+- The main features or capabilities being developed
+- The technical scope (if apparent from the tickets)
+
+Be concise and informative. The description should help someone quickly understand what this epic is about.
+Only return the description text, no other text or formatting.`;
+
+  const ticketSummaries = childTickets
+    .slice(0, 15)
+    .map((t) => `- ${t.summary}${t.description ? `: ${t.description.slice(0, 100)}` : ''}`)
+    .join('\n');
+
+  const response = await getClient().messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 256,
+    system: systemPrompt,
+    messages: [
+      {
+        role: 'user',
+        content: `Epic name: ${epicName}
+
+Child tickets (${childTickets.length} total):
+${ticketSummaries}`,
+      },
+    ],
+  });
+
+  const content = response.content[0];
+  if (content.type !== 'text') {
+    return '';
+  }
+
+  return content.text.trim();
+}
+
+/**
  * Suggest assignees for a ticket based on skills and past work
  */
 export async function suggestAssigneesForTicket(
@@ -529,8 +686,16 @@ export async function suggestAssigneesForTicket(
     return [];
   }
 
+  const hasRequiredSkills = ticket.requiredSkills && ticket.requiredSkills.length > 0;
+
   const systemPrompt = `You are matching a JIRA ticket to the best team members based on their skills.
 Rank team members by fit and provide confidence scores.
+
+${
+  hasRequiredSkills
+    ? `IMPORTANT: This ticket has REQUIRED SKILLS listed. Team members who have these skills should receive significantly higher confidence scores. A team member with all required skills should get 0.8+ confidence. Missing required skills should substantially reduce confidence.`
+    : `Analyze the ticket content to understand what skills would be needed, then match against team member skills.`
+}
 
 Response format (JSON array):
 [
@@ -541,6 +706,12 @@ Response format (JSON array):
     "matchedSkills": ["TypeScript", "React"]
   }
 ]
+
+Confidence scoring guidelines:
+- 0.8+: Team member has most/all required skills and relevant experience
+- 0.6-0.8: Team member has some required skills or strong domain overlap
+- 0.4-0.6: Partial match, may need support or learning
+- <0.4: Poor match, missing key skills
 
 Only include team members with confidence >= 0.3. Return up to 3 suggestions.
 Only return the JSON array, no other text.`;

@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { createStorageService } from '../storageService.js';
 import type { JiraService } from '../jiraService.js';
 import type { JiraConfig, LearningResult, InferredSkill, EpicCategory } from '@jira-planner/shared';
-import { inferSkillsFromTickets, categorizeEpic } from '../claudeService.js';
+import { inferSkillsFromTickets, categorizeEpic, generateEpicDescription } from '../claudeService.js';
 
 interface LearningContext {
   storage: ReturnType<typeof createStorageService>;
@@ -147,6 +147,43 @@ export async function learnFromJiraHistory(context: LearningContext): Promise<Le
     result.patternsLearned += epicCategoriesToSave.length;
   }
   console.log(`Categorized ${result.epicCategories.length} epics with ${epicCategoriesToSave.length} categories`);
+
+  // Step 3a: Enrich epic descriptions for epics with poor/missing descriptions
+  console.log('Enriching epic descriptions...');
+  const MINIMUM_DESCRIPTION_LENGTH = 50;
+  let enrichedCount = 0;
+
+  for (const epic of epics) {
+    // Skip if epic already has a good description
+    if (epic.description.length >= MINIMUM_DESCRIPTION_LENGTH) {
+      continue;
+    }
+
+    const epicTickets = ticketsByEpic.get(epic.key) || [];
+    if (epicTickets.length === 0) {
+      continue; // No tickets to learn from
+    }
+
+    // Generate enriched description from child tickets
+    const enrichedDescription = await generateEpicDescription(
+      epic.name,
+      epicTickets.map((t) => ({ summary: t.summary, description: t.description }))
+    );
+
+    if (enrichedDescription && enrichedDescription.length > 0) {
+      // Store enriched description in agent_knowledge
+      storage.saveAgentKnowledge({
+        id: `epic-${epic.id}-enriched-description`,
+        knowledgeType: 'epic_category', // Using epic_category type for epic-related knowledge
+        key: `epic-${epic.id}-enriched-description`,
+        value: enrichedDescription,
+        confidence: Math.min(0.6 + epicTickets.length * 0.02, 0.95), // Higher confidence with more tickets
+      });
+      enrichedCount++;
+      result.patternsLearned++;
+    }
+  }
+  console.log(`Enriched ${enrichedCount} epic descriptions from child tickets`);
 
   // Step 3b: Learn ticket-epic relationship patterns
   console.log('Learning ticket-epic relationship patterns...');

@@ -9,6 +9,8 @@ export interface JiraConfig {
   workTypeFieldId?: string; // Custom field ID for work type (determines board routing)
   teamFieldId?: string; // Custom field ID for Team filter (e.g., "customfield_10001")
   teamValue?: string; // Value to filter epics by (e.g., "Squad - DI")
+  regressionFieldId?: string; // Custom field ID for Regression (e.g., "customfield_10372")
+  regressionDefaultValue?: string; // Default value for Regression field (e.g., "No")
   createdAt: string;
   updatedAt: string;
 }
@@ -23,6 +25,8 @@ export interface JiraConfigInput {
   workTypeFieldId?: string;
   teamFieldId?: string;
   teamValue?: string;
+  regressionFieldId?: string;
+  regressionDefaultValue?: string;
 }
 
 export interface JiraCreateIssueResponse {

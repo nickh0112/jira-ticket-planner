@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import type { Ticket, TicketType, TicketPriority } from '@jira-planner/shared';
 import { useStore } from '../store/useStore';
-import { updateTicket, deleteTicket } from '../utils/api';
+import { updateTicket, deleteTicket, updateTicketSkillStatus } from '../utils/api';
+import { SkillBadge } from './SkillBadge';
+import { AssigneePicker } from './AssigneePicker';
 
 const ticketTypes: { value: TicketType; label: string; icon: string }[] = [
   { value: 'feature', label: 'Feature', icon: '⚔️' },
@@ -33,10 +35,17 @@ export function TicketEditor() {
   const [criteriaInput, setCriteriaInput] = useState('');
   const [labelInput, setLabelInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [skillStatuses, setSkillStatuses] = useState<Record<string, 'pending' | 'accepted' | 'rejected'>>({});
 
   useEffect(() => {
     if (editingTicket) {
       setFormData({ ...editingTicket });
+      // Initialize skill statuses (all pending by default for AI-inferred skills)
+      const initialStatuses: Record<string, 'pending' | 'accepted' | 'rejected'> = {};
+      editingTicket.requiredSkills?.forEach((skill) => {
+        initialStatuses[skill] = 'pending';
+      });
+      setSkillStatuses(initialStatuses);
     }
   }, [editingTicket]);
 
@@ -112,6 +121,33 @@ export function TicketEditor() {
       ...prev,
       labels: prev.labels?.filter((l) => l !== label),
     }));
+  };
+
+  const handleSkillAccept = async (skill: string) => {
+    setSkillStatuses((prev) => ({ ...prev, [skill]: 'accepted' }));
+    if (editingTicket) {
+      try {
+        await updateTicketSkillStatus(editingTicket.id, skill, 'accepted');
+      } catch (error) {
+        console.error('Failed to update skill status:', error);
+      }
+    }
+  };
+
+  const handleSkillReject = async (skill: string) => {
+    setSkillStatuses((prev) => ({ ...prev, [skill]: 'rejected' }));
+    // Remove rejected skill from requiredSkills
+    setFormData((prev) => ({
+      ...prev,
+      requiredSkills: prev.requiredSkills?.filter((s) => s !== skill),
+    }));
+    if (editingTicket) {
+      try {
+        await updateTicketSkillStatus(editingTicket.id, skill, 'rejected');
+      } catch (error) {
+        console.error('Failed to update skill status:', error);
+      }
+    }
   };
 
   return (
@@ -248,23 +284,22 @@ export function TicketEditor() {
               <label className="block font-pixel text-pixel-xs text-beige/70 mb-2">
                 Assigned To
               </label>
-              <select
-                value={formData.assigneeId || ''}
-                onChange={(e) =>
+              <AssigneePicker
+                teamMembers={teamMembers}
+                selectedId={formData.assigneeId || null}
+                onSelect={(id) =>
                   setFormData((prev) => ({
                     ...prev,
-                    assigneeId: e.target.value || null,
+                    assigneeId: id,
                   }))
                 }
-                className="pixel-input w-full"
-              >
-                <option value="">Unassigned</option>
-                {teamMembers.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    ⚔️ {member.name}
-                  </option>
-                ))}
-              </select>
+                ticketData={{
+                  title: formData.title || '',
+                  description: formData.description || '',
+                  ticketType: formData.ticketType || 'task',
+                  requiredSkills: formData.requiredSkills,
+                }}
+              />
             </div>
           </div>
 
@@ -303,6 +338,33 @@ export function TicketEditor() {
               </button>
             </div>
           </div>
+
+          {/* Required Skills (AI-Inferred) */}
+          {formData.requiredSkills && formData.requiredSkills.length > 0 && (
+            <div>
+              <label className="block font-pixel text-pixel-xs text-beige/70 mb-2">
+                <span className="mr-2">🤖</span>
+                AI-Detected Skills
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {formData.requiredSkills.map((skill) => (
+                  <SkillBadge
+                    key={skill}
+                    skill={skill}
+                    isInferred={true}
+                    confidence={0.85}
+                    status={skillStatuses[skill] || 'pending'}
+                    size="md"
+                    onAccept={() => handleSkillAccept(skill)}
+                    onReject={() => handleSkillReject(skill)}
+                  />
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-beige/50">
+                Accept or reject AI-suggested skills for this quest
+              </p>
+            </div>
+          )}
 
           {/* Objectives (Acceptance Criteria) */}
           <div>

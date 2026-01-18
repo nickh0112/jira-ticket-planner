@@ -11,7 +11,6 @@ const statusTabs: { key: TicketStatus | 'all'; label: string; icon: string }[] =
   { key: 'all', label: 'All', icon: '📋' },
   { key: 'pending', label: 'New', icon: '✨' },
   { key: 'approved', label: 'Accepted', icon: '✓' },
-  { key: 'denied', label: 'Abandoned', icon: '✗' },
   { key: 'created', label: 'Complete', icon: '🏆' },
 ];
 
@@ -31,10 +30,12 @@ export function TicketList() {
   const [showBulkCreateModal, setShowBulkCreateModal] = useState(false);
   const [isCreatingAll, setIsCreatingAll] = useState(false);
 
+  // Exclude abandoned (denied) quests from all views
+  const activeTickets = tickets.filter((t) => t.status !== 'denied');
   const filteredTickets =
     statusFilter === 'all'
-      ? tickets
-      : tickets.filter((t) => t.status === statusFilter);
+      ? activeTickets
+      : activeTickets.filter((t) => t.status === statusFilter);
 
   const pendingCount = tickets.filter((t) => t.status === 'pending').length;
   const approvedCount = tickets.filter((t) => t.status === 'approved').length;
@@ -99,13 +100,13 @@ export function TicketList() {
             <div className="flex items-center gap-2">
               <span className="text-2xl">📜</span>
               <span className="font-pixel text-pixel-sm text-gold">
-                ACTIVE QUESTS: {tickets.length}
+                ACTIVE QUESTS: {activeTickets.length}
               </span>
             </div>
             <div className="font-readable text-lg text-beige/70">
               Progress:{' '}
               <span className="text-quest-complete">
-                {createdCount}/{tickets.length}
+                {createdCount}/{activeTickets.length}
               </span>{' '}
               complete
             </div>
@@ -148,8 +149,8 @@ export function TicketList() {
         {statusTabs.map((tab) => {
           const count =
             tab.key === 'all'
-              ? tickets.length
-              : tickets.filter((t) => t.status === tab.key).length;
+              ? activeTickets.length
+              : activeTickets.filter((t) => t.status === tab.key).length;
           return (
             <button
               key={tab.key}
@@ -172,7 +173,7 @@ export function TicketList() {
         <div className="panel p-8 text-center">
           <div className="text-4xl mb-4">📜</div>
           <p className="font-readable text-xl text-beige/70">
-            {tickets.length === 0
+            {activeTickets.length === 0
               ? 'No quests available. Decode intel to receive new orders.'
               : `No ${statusFilter} quests.`}
           </p>

@@ -12,6 +12,7 @@ export interface Ticket {
   epicId: string | null;
   assigneeId: string | null;
   labels: string[];
+  requiredSkills: string[];
   status: TicketStatus;
   createdInJira: boolean;
   jiraKey?: string;
@@ -29,6 +30,7 @@ export interface CreateTicketInput {
   epicId?: string | null;
   assigneeId?: string | null;
   labels?: string[];
+  requiredSkills?: string[];
 }
 
 export interface UpdateTicketInput {
@@ -40,6 +42,7 @@ export interface UpdateTicketInput {
   epicId?: string | null;
   assigneeId?: string | null;
   labels?: string[];
+  requiredSkills?: string[];
   status?: TicketStatus;
   createdInJira?: boolean;
   jiraKey?: string;

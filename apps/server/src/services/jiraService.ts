@@ -66,6 +66,8 @@ export class JiraService {
   ): Promise<T> {
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
+        console.log(`[jira] Attempt ${attempt + 1}/${retries}: ${options.method} ${url}`);
+
         const response = await fetch(url, {
           ...options,
           headers: {
@@ -78,25 +80,46 @@ export class JiraService {
 
         if (!response.ok) {
           const errorBody = await response.text();
+          console.error(`[jira] HTTP ${response.status}: ${errorBody}`);
+
           let errorMessage = `Jira API error: ${response.status} ${response.statusText}`;
           try {
             const errorJson = JSON.parse(errorBody);
-            if (errorJson.errorMessages) {
+            if (errorJson.errorMessages && errorJson.errorMessages.length > 0) {
               errorMessage = errorJson.errorMessages.join(', ');
             } else if (errorJson.errors) {
-              errorMessage = Object.values(errorJson.errors).join(', ');
+              errorMessage = Object.entries(errorJson.errors)
+                .map(([field, msg]) => `${field}: ${msg}`)
+                .join(', ');
             }
           } catch {
             if (errorBody) {
-              errorMessage = errorBody;
+              errorMessage = `Jira API error (${response.status}): ${errorBody.slice(0, 200)}`;
             }
           }
           throw new Error(errorMessage);
         }
 
-        return response.json();
+        const data = await response.json();
+        console.log(`[jira] Success: ${options.method} ${url}`);
+        return data;
       } catch (error) {
-        if (attempt === retries - 1) throw error;
+        const isNetworkError = error instanceof TypeError ||
+          (error instanceof Error && error.message.includes('fetch'));
+
+        if (isNetworkError) {
+          console.error(`[jira] Network error on attempt ${attempt + 1}: ${error}`);
+        }
+
+        if (attempt === retries - 1) {
+          // On final attempt, provide a helpful error message
+          if (isNetworkError) {
+            throw new Error(`Unable to connect to Jira. Please verify your Jira URL is correct and accessible: ${url}`);
+          }
+          throw error;
+        }
+
+        console.log(`[jira] Retrying in ${delay * Math.pow(2, attempt)}ms...`);
         await new Promise((resolve) => setTimeout(resolve, delay * Math.pow(2, attempt)));
       }
     }
@@ -391,6 +414,12 @@ export class JiraService {
     if (config.workTypeFieldId) {
       const workType = ticketTypeToWorkType[ticket.ticketType];
       fields[config.workTypeFieldId] = { value: workType };
+    }
+
+    // Add Regression field if configured (required by some Jira projects)
+    if (config.regressionFieldId) {
+      const regressionValue = config.regressionDefaultValue || 'No';
+      fields[config.regressionFieldId] = { value: regressionValue };
     }
 
     // Add assignee if ticket has one

@@ -58,6 +58,9 @@ class StorageService {
     if (!ticketColumnNames.includes('labels')) {
       this.db.exec("ALTER TABLE tickets ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'");
     }
+    if (!ticketColumnNames.includes('required_skills')) {
+      this.db.exec("ALTER TABLE tickets ADD COLUMN required_skills TEXT NOT NULL DEFAULT '[]'");
+    }
 
     // Add new columns to jira_config for multi-board support
     const jiraConfigColumns = this.db.prepare("PRAGMA table_info(jira_config)").all() as { name: string }[];
@@ -81,6 +84,12 @@ class StorageService {
     if (!jiraConfigColumnNames.includes('team_value')) {
       this.db.exec('ALTER TABLE jira_config ADD COLUMN team_value TEXT');
     }
+    if (!jiraConfigColumnNames.includes('regression_field_id')) {
+      this.db.exec('ALTER TABLE jira_config ADD COLUMN regression_field_id TEXT');
+    }
+    if (!jiraConfigColumnNames.includes('regression_default_value')) {
+      this.db.exec('ALTER TABLE jira_config ADD COLUMN regression_default_value TEXT');
+    }
 
     // Create jira_sprints table if it doesn't exist
     this.db.exec(`
@@ -102,8 +111,8 @@ class StorageService {
     const id = uuidv4();
     const now = new Date().toISOString();
     const stmt = this.db.prepare(`
-      INSERT INTO tickets (id, title, description, acceptance_criteria, ticket_type, priority, epic_id, assignee_id, labels, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO tickets (id, title, description, acceptance_criteria, ticket_type, priority, epic_id, assignee_id, labels, required_skills, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       id,
@@ -115,6 +124,7 @@ class StorageService {
       input.epicId ?? null,
       input.assigneeId ?? null,
       JSON.stringify(input.labels ?? []),
+      JSON.stringify(input.requiredSkills ?? []),
       now,
       now
     );
@@ -197,6 +207,10 @@ class StorageService {
       updates.push('labels = ?');
       params.push(JSON.stringify(input.labels));
     }
+    if (input.requiredSkills !== undefined) {
+      updates.push('required_skills = ?');
+      params.push(JSON.stringify(input.requiredSkills));
+    }
     if (input.status !== undefined) {
       updates.push('status = ?');
       params.push(input.status);
@@ -242,6 +256,7 @@ class StorageService {
       epicId: row.epic_id,
       assigneeId: row.assignee_id,
       labels: JSON.parse(row.labels || '[]'),
+      requiredSkills: JSON.parse(row.required_skills || '[]'),
       status: row.status,
       createdInJira: Boolean(row.created_in_jira),
       jiraKey: row.jira_key ?? undefined,
@@ -416,7 +431,8 @@ class StorageService {
         UPDATE jira_config
         SET base_url = ?, project_key = ?, epic_link_field = ?, team_name = ?,
             default_board_id = ?, design_board_id = ?, work_type_field_id = ?,
-            team_field_id = ?, team_value = ?, updated_at = ?
+            team_field_id = ?, team_value = ?, regression_field_id = ?,
+            regression_default_value = ?, updated_at = ?
         WHERE id = ?
       `);
       stmt.run(
@@ -429,6 +445,8 @@ class StorageService {
         input.workTypeFieldId ?? null,
         input.teamFieldId ?? null,
         input.teamValue ?? null,
+        input.regressionFieldId ?? null,
+        input.regressionDefaultValue ?? null,
         now,
         existing.id
       );
@@ -438,8 +456,9 @@ class StorageService {
       const stmt = this.db.prepare(`
         INSERT INTO jira_config (id, base_url, project_key, epic_link_field, team_name,
                                  default_board_id, design_board_id, work_type_field_id,
-                                 team_field_id, team_value, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                 team_field_id, team_value, regression_field_id,
+                                 regression_default_value, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       stmt.run(
         id,
@@ -452,6 +471,8 @@ class StorageService {
         input.workTypeFieldId ?? null,
         input.teamFieldId ?? null,
         input.teamValue ?? null,
+        input.regressionFieldId ?? null,
+        input.regressionDefaultValue ?? null,
         now,
         now
       );
@@ -471,6 +492,8 @@ class StorageService {
       workTypeFieldId: row.work_type_field_id ?? undefined,
       teamFieldId: row.team_field_id ?? undefined,
       teamValue: row.team_value ?? undefined,
+      regressionFieldId: row.regression_field_id ?? undefined,
+      regressionDefaultValue: row.regression_default_value ?? undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
