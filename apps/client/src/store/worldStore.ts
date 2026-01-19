@@ -22,6 +22,7 @@ import {
   getWorldDimensions,
   type BasecampMapData,
 } from '../utils/tilemapLoader';
+import { type Direction, getDirectionFromMovement } from '../utils/lpcSpriteLoader';
 
 // Unit state for RTS visualization
 export interface UnitState {
@@ -32,6 +33,7 @@ export interface UnitState {
   targetY: number | null;
   activityState: ActivityState;
   currentEpicId: string | null;
+  facingDirection: Direction;
 }
 
 // XP popup animation
@@ -154,6 +156,7 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
           targetY: null,
           activityState: pos.state,
           currentEpicId: null,
+          facingDirection: 'down',
         };
       }
       set({ units });
@@ -230,6 +233,7 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
           targetY: null,
           activityState: 'idle',
           currentEpicId: null,
+          facingDirection: 'down',
         };
         return;
       }
@@ -253,6 +257,7 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
             targetY: null,
             activityState: 'working',
             currentEpicId: memberAssignments.find((a) => a.hasActiveWork)?.epicId || null,
+            facingDirection: 'down',
           };
           return;
         }
@@ -272,6 +277,7 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
         targetY: null,
         activityState: 'idle',
         currentEpicId: null,
+        facingDirection: 'down',
       };
     });
 
@@ -335,6 +341,11 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
       const unit = state.units[memberId];
       if (!unit) return state;
 
+      // Calculate movement direction
+      const dx = x - unit.x;
+      const dy = y - unit.y;
+      const newDirection = getDirectionFromMovement(dx, dy);
+
       // Check if reached target
       const reachedTarget =
         unit.targetX !== null &&
@@ -356,6 +367,10 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
                 ? 'working'
                 : 'idle'
               : unit.activityState,
+            // Update facing direction when moving, keep current direction when stopped
+            facingDirection: (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01)
+              ? newDirection
+              : unit.facingDirection,
           },
         },
       };

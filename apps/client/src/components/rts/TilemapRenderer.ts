@@ -1,6 +1,6 @@
 import { Graphics, Container, Text, TextStyle, Sprite } from 'pixi.js';
 import type { BasecampMapData, WorkArea } from '../../utils/tilemapLoader';
-import { getDisplayScale, getBackgroundTexture, getOverlayFrame } from '../../utils/tilemapLoader';
+import { getDisplayScale, getBackgroundTexture } from '../../utils/tilemapLoader';
 import { getTentTexture, getCampfireFrames } from '../../utils/spriteLoader';
 
 // Color palette for work area UI elements
@@ -61,29 +61,30 @@ function renderBackground(container: Container, mapData: BasecampMapData): void 
   }
 }
 
-/**
- * Render animated overlays from the map config
- */
-function renderAnimatedOverlays(
-  container: Container,
-  mapData: BasecampMapData,
-  animationFrame: number
-): void {
-  const overlays = mapData.animatedOverlays || [];
-
-  for (const overlay of overlays) {
-    const texture = getOverlayFrame(overlay.id, animationFrame);
-
-    if (texture) {
-      const sprite = new Sprite(texture);
-      sprite.x = overlay.position.x;
-      sprite.y = overlay.position.y;
-      sprite.anchor.set(overlay.anchor?.x ?? 0.5, overlay.anchor?.y ?? 0.5);
-      sprite.scale.set(overlay.scale || 1);
-      container.addChild(sprite);
-    }
-  }
-}
+// Unused function - commented out to avoid TS6133 error
+// /**
+//  * Render animated overlays from the map config
+//  */
+// function renderAnimatedOverlays(
+//   container: Container,
+//   mapData: BasecampMapData,
+//   animationFrame: number
+// ): void {
+//   const overlays = mapData.animatedOverlays || [];
+//
+//   for (const overlay of overlays) {
+//     const texture = getOverlayFrame(overlay.id, animationFrame);
+//
+//     if (texture) {
+//       const sprite = new Sprite(texture);
+//       sprite.x = overlay.position.x;
+//       sprite.y = overlay.position.y;
+//       sprite.anchor.set(overlay.anchor?.x ?? 0.5, overlay.anchor?.y ?? 0.5);
+//       sprite.scale.set(overlay.scale || 1);
+//       container.addChild(sprite);
+//     }
+//   }
+// }
 
 /**
  * Render work area markers and structures
@@ -307,9 +308,9 @@ function renderSupplyArea(container: Container): void {
  */
 export function renderBasecamp(
   options: TilemapRendererOptions,
-  basecampAssetsLoaded: boolean
+  _basecampAssetsLoaded: boolean
 ): Container {
-  const { mapData, animationFrame } = options;
+  const { mapData, animationFrame: _animationFrame } = options;
 
   const basecampContainer = new Container();
 

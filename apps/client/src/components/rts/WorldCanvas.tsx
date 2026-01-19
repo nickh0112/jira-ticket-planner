@@ -7,10 +7,15 @@ import { useStore } from '../../store/useStore';
 import {
   loadCharacterSprites,
   getSpriteTypeForRole,
-  getSpriteTexture,
   getSpriteTypeColor,
   loadBasecampAssets,
 } from '../../utils/spriteLoader';
+import {
+  loadLPCSprites,
+  getLPCTexture,
+  getWalkFrameCount,
+  getIdleFrameCount,
+} from '../../utils/lpcSpriteLoader';
 import { loadBackground, loadAllOverlays, getDisplayScale } from '../../utils/tilemapLoader';
 import { renderBasecamp } from './TilemapRenderer';
 import { useCameraControls } from '../../hooks/useCameraControls';
@@ -54,6 +59,7 @@ export function WorldCanvas({
   const [isReady, setIsReady] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 800 });
   const [spritesLoaded, setSpritesLoaded] = useState(false);
+  const [lpcSpritesLoaded, setLpcSpritesLoaded] = useState(false);
   const [basecampLoaded, setBasecampLoaded] = useState(false);
   const [backgroundLoaded, setBackgroundLoaded] = useState(false);
   const [animationFrame, setAnimationFrame] = useState(0);
@@ -103,6 +109,9 @@ export function WorldCanvas({
     loadCharacterSprites().then((loaded) => {
       setSpritesLoaded(loaded);
     });
+    loadLPCSprites().then((loaded) => {
+      setLpcSpritesLoaded(loaded);
+    });
     loadBasecampAssets().then((loaded) => {
       setBasecampLoaded(loaded);
     });
@@ -118,12 +127,14 @@ export function WorldCanvas({
   }, [basecampMapData]);
 
   // Animation frame ticker for walking units and campfire
+  // LPC walk cycle has 8 frames, animate at ~10 FPS for smooth movement
   useEffect(() => {
     if (!isReady) return;
 
+    const walkFrameCount = getWalkFrameCount();
     const interval = setInterval(() => {
-      setAnimationFrame((prev) => (prev + 1) % 4);
-    }, 200); // 5 FPS animation
+      setAnimationFrame((prev) => (prev + 1) % walkFrameCount);
+    }, 100); // 10 FPS animation for smoother walk cycle
 
     return () => clearInterval(interval);
   }, [isReady]);
@@ -307,25 +318,28 @@ export function WorldCanvas({
         onSelectUnit(isSelected ? null : unit.memberId);
       });
 
-      // Determine animation frame based on unit state
-      let frameType: 'idle' | 'walk1' | 'walk2' = 'idle';
-      if (unit.activityState === 'walking' && unit.targetX !== null && unit.targetY !== null) {
-        const walkFrames: ('idle' | 'walk1' | 'idle' | 'walk2')[] = ['idle', 'walk1', 'idle', 'walk2'];
-        frameType = walkFrames[animationFrame % 4] as 'idle' | 'walk1' | 'walk2';
-      }
+      // Determine animation type based on unit state
+      const isWalking = unit.activityState === 'walking' && unit.targetX !== null && unit.targetY !== null;
+      const animationType = isWalking ? 'walk' : 'idle';
 
-      // Try to use sprite, fallback to circle
-      const spriteTexture = spritesLoaded ? getSpriteTexture(spriteType, frameType) : null;
+      // Try to use LPC sprite first, then fall back to old sprites, then circle
+      // Idle animation runs at 1/3 speed for subtle breathing effect
+      const idleFrame = Math.floor(animationFrame / 3) % getIdleFrameCount();
+      const frameToUse = isWalking ? animationFrame : idleFrame;
+      let spriteTexture = lpcSpritesLoaded
+        ? getLPCTexture(unit.facingDirection, animationType, frameToUse)
+        : null;
 
       if (spriteTexture) {
         const sprite = new Sprite(spriteTexture);
         sprite.anchor.set(0.5);
-        sprite.scale.set(1.5);
+        // LPC sprites are 64x64, scale slightly (0.9 for similar visual size to old sprites)
+        sprite.scale.set(0.9);
         unitContainer.addChild(sprite);
 
         if (isSelected) {
           const selectionRing = new Graphics();
-          selectionRing.circle(0, 0, 28);
+          selectionRing.circle(0, 0, 32);
           selectionRing.stroke({ width: 3, color: COLORS.unitSelected });
           unitContainer.addChild(selectionRing);
         }
@@ -350,7 +364,8 @@ export function WorldCanvas({
         unitContainer.addChild(roleIndicator);
       }
 
-      // Name label
+      // Name label - position below sprite
+      const spriteSize = lpcSpritesLoaded ? 32 : (spritesLoaded ? 28 : 22);
       const nameLabel = new Text({
         text: member.name.split(' ')[0],
         style: new TextStyle({
@@ -366,10 +381,10 @@ export function WorldCanvas({
         }),
       });
       nameLabel.anchor.set(0.5, 0);
-      nameLabel.y = spritesLoaded ? 28 : 22;
+      nameLabel.y = spriteSize;
       unitContainer.addChild(nameLabel);
 
-      // Activity indicator
+      // Activity indicator - position above sprite
       if (unit.activityState !== 'idle') {
         const activityIcon = getActivityIcon(unit.activityState);
         const activityLabel = new Text({
@@ -379,7 +394,7 @@ export function WorldCanvas({
           }),
         });
         activityLabel.anchor.set(0.5, 0.5);
-        activityLabel.y = spritesLoaded ? -32 : -25;
+        activityLabel.y = lpcSpritesLoaded ? -36 : (spritesLoaded ? -32 : -25);
         unitContainer.addChild(activityLabel);
       }
 
@@ -507,6 +522,7 @@ export function WorldCanvas({
     moveUnit,
     xpFloats,
     spritesLoaded,
+    lpcSpritesLoaded,
     basecampLoaded,
     backgroundLoaded,
     animationFrame,
