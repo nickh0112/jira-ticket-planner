@@ -59,6 +59,7 @@ interface WorldStore {
   memberCampaignAssignments: Record<string, CampaignAssignment[]>;
   basecampMapData: BasecampMapData | null;
   workAreas: WorkArea[];
+  idleWanderInterval: ReturnType<typeof setInterval> | null;
 
   // Camera state
   camera: CameraState;
@@ -75,7 +76,7 @@ interface WorldStore {
   loadBasecampMap: () => Promise<void>;
   loadRegions: () => Promise<void>;
   generateRegions: () => Promise<void>;
-  initializeUnits: (members: TeamMember[], epics: Epic[]) => void;
+  initializeUnits: (members: TeamMember[], epics: Epic[], tickets: Ticket[]) => void;
   selectUnit: (memberId: string | null) => void;
   moveUnit: (memberId: string, targetX: number, targetY: number, epicId?: string) => void;
   moveUnitToWorkArea: (memberId: string, role: string) => void;
@@ -85,9 +86,11 @@ interface WorldStore {
   removeXPFloat: (id: string) => void;
   setViewportOffset: (x: number, y: number) => void;
   setZoom: (zoom: number) => void;
-  updateCampaignAssignments: (tickets: Ticket[]) => void;
+  updateCampaignAssignments: (tickets: Ticket[], members: TeamMember[]) => void;
   updateCamera: (camera: Partial<CameraState>) => void;
   panCameraTo: (x: number, y: number) => void;
+  startIdleWandering: () => void;
+  stopIdleWandering: () => void;
 }
 
 export const useWorldStore = create<WorldStore>((set, get) => ({
@@ -98,6 +101,7 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   memberCampaignAssignments: {},
   basecampMapData: null,
   workAreas: [],
+  idleWanderInterval: null,
 
   // Camera state
   camera: {
@@ -195,7 +199,7 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
   },
 
   // Initialize units from team members
-  initializeUnits: (members, _epics) => {
+  initializeUnits: (members, _epics, tickets) => {
     const state = get();
     const existingUnits = state.units;
 
@@ -205,6 +209,9 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
     const campfire = getCampfireArea();
     const campfireX = campfire?.position.x || 800;
     const campfireY = campfire?.position.y || 512;
+
+    // Pre-compute campaign assignments to know who has active work
+    const assignments = computeCampaignAssignments(tickets);
 
     members.forEach((member, index) => {
       // If unit already exists, keep its position
@@ -225,6 +232,30 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
           currentEpicId: null,
         };
         return;
+      }
+
+      // Check if member has active work - position near their work area
+      const memberAssignments = assignments[member.id];
+      const hasActiveWork = memberAssignments?.some((a) => a.hasActiveWork);
+
+      if (hasActiveWork) {
+        // Find the appropriate work area for this member's role
+        const workArea = findWorkAreaForRole(member.role);
+        if (workArea) {
+          // Position within the work area with some randomization
+          const angle = Math.random() * Math.PI * 2;
+          const distance = Math.random() * (workArea.radius * 0.6);
+          units[member.id] = {
+            memberId: member.id,
+            x: workArea.position.x + Math.cos(angle) * distance,
+            y: workArea.position.y + Math.sin(angle) * distance,
+            targetX: null,
+            targetY: null,
+            activityState: 'working',
+            currentEpicId: memberAssignments.find((a) => a.hasActiveWork)?.epicId || null,
+          };
+          return;
+        }
       }
 
       // Place new units around the campfire with randomization
@@ -392,10 +423,57 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
     set({ zoom: Math.max(0.5, Math.min(2, zoom)) });
   },
 
-  // Update campaign assignments from tickets
-  updateCampaignAssignments: (tickets) => {
-    const assignments = computeCampaignAssignments(tickets);
-    set({ memberCampaignAssignments: assignments });
+  // Update campaign assignments from tickets and auto-move units when work status changes
+  updateCampaignAssignments: (tickets, members) => {
+    const state = get();
+    const previousAssignments = state.memberCampaignAssignments;
+    const newAssignments = computeCampaignAssignments(tickets);
+
+    // Check for members whose hasActiveWork changed from false to true
+    for (const [memberId, assignments] of Object.entries(newAssignments)) {
+      const hasActiveNow = assignments.some((a) => a.hasActiveWork);
+      const previousMemberAssignments = previousAssignments[memberId];
+      const hadActiveBefore = previousMemberAssignments?.some((a) => a.hasActiveWork) ?? false;
+
+      // If just became active, move unit to work area
+      if (hasActiveNow && !hadActiveBefore) {
+        const member = members.find((m) => m.id === memberId);
+        if (member) {
+          get().moveUnitToWorkArea(memberId, member.role);
+          // Set the epic they're working on
+          const activeAssignment = assignments.find((a) => a.hasActiveWork);
+          if (activeAssignment) {
+            set((s) => ({
+              units: {
+                ...s.units,
+                [memberId]: {
+                  ...s.units[memberId],
+                  currentEpicId: activeAssignment.epicId,
+                },
+              },
+            }));
+          }
+        }
+      }
+      // If just became idle (had active before, not now), transition back to idle state
+      else if (!hasActiveNow && hadActiveBefore) {
+        const unit = state.units[memberId];
+        if (unit && unit.activityState === 'working') {
+          set((s) => ({
+            units: {
+              ...s.units,
+              [memberId]: {
+                ...s.units[memberId],
+                activityState: 'idle',
+                currentEpicId: null,
+              },
+            },
+          }));
+        }
+      }
+    }
+
+    set({ memberCampaignAssignments: newAssignments });
   },
 
   // Update camera state
@@ -421,6 +499,58 @@ export const useWorldStore = create<WorldStore>((set, get) => ({
         y: Math.max(0, y - viewportHeight / (2 * state.camera.zoom)),
       },
     });
+  },
+
+  // Start idle wandering for units that are idle
+  startIdleWandering: () => {
+    const state = get();
+    // Clear any existing interval
+    if (state.idleWanderInterval) {
+      clearInterval(state.idleWanderInterval);
+    }
+
+    const interval = setInterval(() => {
+      const { units, config } = get();
+      const worldWidth = config?.width || 1920;
+      const worldHeight = config?.height || 1280;
+
+      Object.values(units).forEach((unit) => {
+        // Only wander if idle and not currently moving
+        if (unit.activityState === 'idle' && unit.targetX === null && unit.targetY === null) {
+          // Wander within ~50px of current position
+          const wanderX = unit.x + (Math.random() - 0.5) * 100;
+          const wanderY = unit.y + (Math.random() - 0.5) * 100;
+
+          // Clamp to world bounds with padding
+          const clampedX = Math.max(50, Math.min(worldWidth - 50, wanderX));
+          const clampedY = Math.max(50, Math.min(worldHeight - 50, wanderY));
+
+          // Set target to trigger walking animation but don't change activity state permanently
+          set((s) => ({
+            units: {
+              ...s.units,
+              [unit.memberId]: {
+                ...unit,
+                targetX: clampedX,
+                targetY: clampedY,
+                activityState: 'walking',
+              },
+            },
+          }));
+        }
+      });
+    }, 3000 + Math.random() * 2000); // Every 3-5 seconds
+
+    set({ idleWanderInterval: interval });
+  },
+
+  // Stop idle wandering
+  stopIdleWandering: () => {
+    const state = get();
+    if (state.idleWanderInterval) {
+      clearInterval(state.idleWanderInterval);
+      set({ idleWanderInterval: null });
+    }
   },
 }));
 

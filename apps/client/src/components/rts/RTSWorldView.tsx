@@ -7,11 +7,11 @@ import { WorldCanvas } from './WorldCanvas';
 import { UnitInfoPanel } from './UnitInfoPanel';
 import { MiniMap } from './MiniMap';
 import { TeamLeaderboard } from '../TeamLeaderboard';
-import { getSyncStatus, triggerSync, updateSyncConfig } from '../../utils/api';
+import { getSyncStatus, triggerSync, updateSyncConfig, getTickets } from '../../utils/api';
 import type { JiraSyncState } from '@jira-planner/shared';
 
 export function RTSWorldView() {
-  const { teamMembers, epics, showToast } = useStore();
+  const { teamMembers, epics, tickets, setTickets, showToast } = useStore();
   const {
     config,
     regions,
@@ -40,13 +40,20 @@ export function RTSWorldView() {
   // Connect to SSE for real-time updates
   useSyncEvents({
     enabled: true,
-    onSyncCompleted: (result) => {
+    onSyncCompleted: async (result) => {
       showToast(
         `Sync complete: ${result.ticketsProcessed} tickets, +${result.xpAwarded} XP`,
         'success'
       );
       loadLeaderboard();
       loadSyncStatus();
+      // Refresh tickets to update campaign assignments
+      try {
+        const { tickets: updatedTickets } = await getTickets();
+        setTickets(updatedTickets);
+      } catch (error) {
+        console.error('Failed to refresh tickets after sync:', error);
+      }
     },
     onSyncError: (error) => {
       showToast(`Sync error: ${error}`, 'error');
@@ -65,9 +72,9 @@ export function RTSWorldView() {
   // Initialize units when team members or config changes
   useEffect(() => {
     if (config && teamMembers.length > 0) {
-      initializeUnits(teamMembers, epics);
+      initializeUnits(teamMembers, epics, tickets);
     }
-  }, [config, teamMembers, epics, initializeUnits]);
+  }, [config, teamMembers, epics, tickets, initializeUnits]);
 
   const loadSyncStatus = async () => {
     try {

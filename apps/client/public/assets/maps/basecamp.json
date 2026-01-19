@@ -1,117 +1,92 @@
 {
+  "version": "2.0",
+  "type": "map",
   "width": 60,
   "height": 40,
   "tileWidth": 32,
   "tileHeight": 32,
-  "layers": [
+  "backgroundImage": "/assets/maps/backgroundmap.jpeg",
+  "animatedOverlays": [
     {
-      "name": "ground",
-      "type": "tilelayer",
-      "data": []
-    },
-    {
-      "name": "decorations",
-      "type": "tilelayer",
-      "data": []
-    },
-    {
-      "name": "obstacles_lower",
-      "type": "tilelayer",
-      "data": []
-    },
-    {
-      "name": "obstacles_upper",
-      "type": "tilelayer",
-      "data": []
+      "id": "campfire",
+      "spriteSheet": "/assets/sprites/campfire.png",
+      "position": { "x": 960, "y": 640 },
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "frameCount": 4,
+      "fps": 8,
+      "scale": 2,
+      "anchor": { "x": 0.5, "y": 0.5 }
     }
   ],
+  "properties": {
+    "scale": 2
+  },
   "workAreas": [
     {
       "id": "backend-tent",
       "name": "Backend Tent",
       "roleTypes": ["backend", "api", "devops"],
-      "position": { "x": 320, "y": 256 },
+      "position": { "x": 384, "y": 256 },
       "radius": 96
     },
     {
       "id": "frontend-tent",
       "name": "Frontend Tent",
       "roleTypes": ["frontend", "ui"],
-      "position": { "x": 1280, "y": 256 },
+      "position": { "x": 1536, "y": 256 },
       "radius": 96
     },
     {
       "id": "fullstack-area",
       "name": "Fullstack Area",
       "roleTypes": ["fullstack", "full stack"],
-      "position": { "x": 320, "y": 640 },
+      "position": { "x": 384, "y": 1024 },
       "radius": 96
     },
     {
       "id": "ai-workshop",
       "name": "AI Workshop",
       "roleTypes": ["ai", "ml", "machine learning"],
-      "position": { "x": 1280, "y": 640 },
+      "position": { "x": 1536, "y": 1024 },
       "radius": 96
-    },
-    {
-      "id": "campfire",
-      "name": "Central Campfire",
-      "roleTypes": [],
-      "position": { "x": 800, "y": 512 },
-      "radius": 128
     },
     {
       "id": "qa-grounds",
       "name": "QA Grounds",
       "roleTypes": ["qa", "test", "quality", "design"],
-      "position": { "x": 320, "y": 960 },
+      "position": { "x": 960, "y": 192 },
       "radius": 96
     },
     {
       "id": "supply-area",
       "name": "Supply Area",
       "roleTypes": [],
-      "position": { "x": 1280, "y": 960 },
+      "position": { "x": 960, "y": 1088 },
       "radius": 96
+    },
+    {
+      "id": "campfire",
+      "name": "Central Campfire",
+      "roleTypes": [],
+      "position": { "x": 960, "y": 640 },
+      "radius": 128
     }
   ],
   "fence": {
-    "topLeft": { "x": 96, "y": 64 },
-    "bottomRight": { "x": 1824, "y": 1216 }
+    "topLeft": { "x": 64, "y": 64 },
+    "bottomRight": { "x": 1856, "y": 1216 }
   },
   "entrance": {
     "position": { "x": 960, "y": 1216 },
     "width": 192
   },
   "paths": [
-    {
-      "from": { "x": 800, "y": 512 },
-      "to": { "x": 320, "y": 256 }
-    },
-    {
-      "from": { "x": 800, "y": 512 },
-      "to": { "x": 1280, "y": 256 }
-    },
-    {
-      "from": { "x": 800, "y": 512 },
-      "to": { "x": 320, "y": 640 }
-    },
-    {
-      "from": { "x": 800, "y": 512 },
-      "to": { "x": 1280, "y": 640 }
-    },
-    {
-      "from": { "x": 800, "y": 512 },
-      "to": { "x": 320, "y": 960 }
-    },
-    {
-      "from": { "x": 800, "y": 512 },
-      "to": { "x": 1280, "y": 960 }
-    },
-    {
-      "from": { "x": 800, "y": 512 },
-      "to": { "x": 960, "y": 1216 }
-    }
+    { "from": { "x": 960, "y": 640 }, "to": { "x": 384, "y": 256 } },
+    { "from": { "x": 960, "y": 640 }, "to": { "x": 1536, "y": 256 } },
+    { "from": { "x": 960, "y": 640 }, "to": { "x": 384, "y": 1024 } },
+    { "from": { "x": 960, "y": 640 }, "to": { "x": 1536, "y": 1024 } },
+    { "from": { "x": 960, "y": 640 }, "to": { "x": 960, "y": 192 } },
+    { "from": { "x": 960, "y": 640 }, "to": { "x": 960, "y": 1088 } }
   ]
 }

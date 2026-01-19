@@ -11,6 +11,7 @@ import {
   getSpriteTypeColor,
   loadBasecampAssets,
 } from '../../utils/spriteLoader';
+import { loadBackground, loadAllOverlays, getDisplayScale } from '../../utils/tilemapLoader';
 import { renderBasecamp } from './TilemapRenderer';
 import { useCameraControls } from '../../hooks/useCameraControls';
 import type { BasecampMapData } from '../../utils/tilemapLoader';
@@ -54,6 +55,7 @@ export function WorldCanvas({
   const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 800 });
   const [spritesLoaded, setSpritesLoaded] = useState(false);
   const [basecampLoaded, setBasecampLoaded] = useState(false);
+  const [backgroundLoaded, setBackgroundLoaded] = useState(false);
   const [animationFrame, setAnimationFrame] = useState(0);
 
   const {
@@ -65,15 +67,18 @@ export function WorldCanvas({
     camera,
     updateCamera,
     config,
+    startIdleWandering,
+    stopIdleWandering,
   } = useWorldStore();
   const { tickets } = useStore();
 
-  // World dimensions from map data or config
+  // World dimensions from map data or config (accounting for display scale)
+  const displayScale = getDisplayScale();
   const worldWidth = basecampMapData
-    ? basecampMapData.width * basecampMapData.tileWidth
+    ? basecampMapData.width * basecampMapData.tileWidth * displayScale
     : config?.width || 1920;
   const worldHeight = basecampMapData
-    ? basecampMapData.height * basecampMapData.tileHeight
+    ? basecampMapData.height * basecampMapData.tileHeight * displayScale
     : config?.height || 1280;
 
   // Camera controls
@@ -90,10 +95,10 @@ export function WorldCanvas({
 
   // Update campaign assignments when tickets change
   useEffect(() => {
-    updateCampaignAssignments(tickets);
-  }, [tickets, updateCampaignAssignments]);
+    updateCampaignAssignments(tickets, teamMembers);
+  }, [tickets, teamMembers, updateCampaignAssignments]);
 
-  // Load sprites
+  // Load sprites and tilesets
   useEffect(() => {
     loadCharacterSprites().then((loaded) => {
       setSpritesLoaded(loaded);
@@ -102,6 +107,15 @@ export function WorldCanvas({
       setBasecampLoaded(loaded);
     });
   }, []);
+
+  // Load background and overlays after map data is available
+  useEffect(() => {
+    if (basecampMapData) {
+      Promise.all([loadBackground(), loadAllOverlays()]).then(([bgLoaded]) => {
+        setBackgroundLoaded(bgLoaded);
+      });
+    }
+  }, [basecampMapData]);
 
   // Animation frame ticker for walking units and campfire
   useEffect(() => {
@@ -113,6 +127,17 @@ export function WorldCanvas({
 
     return () => clearInterval(interval);
   }, [isReady]);
+
+  // Start idle wandering when canvas is ready
+  useEffect(() => {
+    if (!isReady) return;
+
+    startIdleWandering();
+
+    return () => {
+      stopIdleWandering();
+    };
+  }, [isReady, startIdleWandering, stopIdleWandering]);
 
   // Handle container resize
   const handleResize = useCallback(() => {
@@ -208,19 +233,6 @@ export function WorldCanvas({
   useEffect(() => {
     if (!appRef.current || !isReady) return;
 
-    // === DEBUG START ===
-    console.log('[WorldCanvas Render]', {
-      isReady,
-      hasBasecampMapData: !!basecampMapData,
-      mapDimensions: basecampMapData
-        ? `${basecampMapData.width}x${basecampMapData.height} tiles, ${basecampMapData.tileWidth}x${basecampMapData.tileHeight}px each`
-        : 'null',
-      canvasSize,
-      camera: { x: camera.x, y: camera.y, zoom: camera.zoom },
-      worldDimensions: { worldWidth, worldHeight },
-    });
-    // === DEBUG END ===
-
     const app = appRef.current;
     app.stage.removeChildren();
 
@@ -230,21 +242,6 @@ export function WorldCanvas({
     worldContainer.y = -camera.y * camera.zoom;
     worldContainer.scale.set(camera.zoom);
     app.stage.addChild(worldContainer);
-
-    // === DEBUG: Test rectangle to verify PixiJS renders ===
-    const testRect = new Graphics();
-    testRect.rect(10, 10, 150, 40);
-    testRect.fill(0x00ff00);
-    app.stage.addChild(testRect);
-
-    const debugText = new Text({
-      text: `Data: ${basecampMapData ? 'YES' : 'NO'} | Size: ${canvasSize.width}x${canvasSize.height}`,
-      style: new TextStyle({ fontSize: 12, fill: 0x000000 }),
-    });
-    debugText.x = 15;
-    debugText.y = 15;
-    app.stage.addChild(debugText);
-    // === END DEBUG ===
 
     // Create containers for layering
     const basecampContainer = new Container();
@@ -270,10 +267,10 @@ export function WorldCanvas({
       );
       basecampContainer.addChild(tilemapContainer);
     } else {
-      // Fallback: simple background - use BRIGHT MAGENTA for debugging
+      // Fallback: simple background when map data isn't available
       const bg = new Graphics();
       bg.rect(0, 0, worldWidth, worldHeight);
-      bg.fill(0xff00ff); // MAGENTA for debugging - means basecampMapData is null
+      bg.fill(0x4a6741); // Green grass color fallback
       basecampContainer.addChild(bg);
     }
 
@@ -511,6 +508,7 @@ export function WorldCanvas({
     xpFloats,
     spritesLoaded,
     basecampLoaded,
+    backgroundLoaded,
     animationFrame,
     memberCampaignAssignments,
     camera,
@@ -518,6 +516,7 @@ export function WorldCanvas({
     worldWidth,
     worldHeight,
     workAreas,
+    displayScale,
   ]);
 
   // Animation loop for unit movement
