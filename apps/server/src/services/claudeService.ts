@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { v4 as uuidv4 } from 'uuid';
 import type {
   CreateTicketInput,
   TeamMember,
@@ -48,6 +49,16 @@ When extracting tickets:
 8. If epics are provided, suggest the most relevant epic for each ticket
 9. Suggest relevant labels for categorization (e.g., "backend", "frontend", "api", "database", "auth", "ui", "performance", "security", "testing", "documentation")
 
+**IMPORTANT: Split multi-layer features into separate tickets**
+- If a feature requires work across frontend, backend, or ML, create a SEPARATE ticket for each layer
+- Give related tickets a shared "featureGroup" identifier (use the feature name as a slug, e.g., "user-authentication")
+- Each split ticket should have the SAME epicId
+- Include the layer in the title (e.g., "User Auth - Backend", "User Auth - Frontend")
+
+Example: "Build user profile with UI and API" becomes:
+- "User Profile - Backend" (labels: ["backend", "api"], featureGroup: "user-profile")
+- "User Profile - Frontend" (labels: ["frontend", "react"], featureGroup: "user-profile")
+
 Available team members:
 ${teamMembersInfo || 'None configured'}
 
@@ -55,7 +66,7 @@ Available epics:
 ${epicsInfo || 'None configured'}
 
 Respond with a JSON array of tickets. Each ticket should have:
-- title: string (clear, concise)
+- title: string (clear, concise; include layer suffix when split)
 - description: string (detailed explanation)
 - acceptanceCriteria: string[] (specific, testable criteria)
 - ticketType: "feature" | "bug" | "improvement" | "task"
@@ -63,6 +74,7 @@ Respond with a JSON array of tickets. Each ticket should have:
 - assigneeId: string | null (ID of suggested team member, or null)
 - epicId: string | null (ID of suggested epic, or null)
 - labels: string[] (relevant labels like "backend", "frontend", "api", etc.)
+- featureGroup: string | null (shared slug for split tickets, e.g., "user-authentication")
 
 Only return the JSON array, no other text.`;
 
@@ -98,7 +110,10 @@ Only return the JSON array, no other text.`;
     }
     jsonText = jsonText.trim();
 
-    const tickets = JSON.parse(jsonText) as CreateTicketInput[];
+    const tickets = JSON.parse(jsonText) as (CreateTicketInput & { featureGroup?: string })[];
+
+    // Map featureGroup slugs to shared UUIDs
+    const featureGroupMap = new Map<string, string>();
 
     // Validate the structure and resolve IDs
     return tickets.map((ticket) => {
@@ -134,6 +149,15 @@ Only return the JSON array, no other text.`;
         }
       }
 
+      // Convert featureGroup slug to shared UUID
+      let featureGroupId: string | null = null;
+      if (ticket.featureGroup) {
+        if (!featureGroupMap.has(ticket.featureGroup)) {
+          featureGroupMap.set(ticket.featureGroup, uuidv4());
+        }
+        featureGroupId = featureGroupMap.get(ticket.featureGroup)!;
+      }
+
       return {
         title: String(ticket.title || ''),
         description: String(ticket.description || ''),
@@ -145,6 +169,7 @@ Only return the JSON array, no other text.`;
         assigneeId: resolvedAssigneeId,
         epicId: resolvedEpicId,
         labels: Array.isArray(ticket.labels) ? ticket.labels.map(String) : [],
+        featureGroupId,
       };
     });
   } catch (error) {

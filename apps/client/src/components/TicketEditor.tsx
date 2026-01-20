@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Ticket, TicketType, TicketPriority } from '@jira-planner/shared';
 import { useStore } from '../store/useStore';
-import { updateTicket, deleteTicket, updateTicketSkillStatus } from '../utils/api';
+import { updateTicket, deleteTicket, updateTicketSkillStatus, getRelatedTickets } from '../utils/api';
 import { SkillBadge } from './SkillBadge';
 import { AssigneePicker } from './AssigneePicker';
 import { PixelSelect } from './PixelSelect';
@@ -37,6 +37,7 @@ export function TicketEditor() {
   const [labelInput, setLabelInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [skillStatuses, setSkillStatuses] = useState<Record<string, 'pending' | 'accepted' | 'rejected'>>({});
+  const [relatedTickets, setRelatedTickets] = useState<Ticket[]>([]);
 
   useEffect(() => {
     if (editingTicket) {
@@ -47,6 +48,15 @@ export function TicketEditor() {
         initialStatuses[skill] = 'pending';
       });
       setSkillStatuses(initialStatuses);
+
+      // Fetch related tickets if this ticket has a feature group
+      if (editingTicket.featureGroupId) {
+        getRelatedTickets(editingTicket.id)
+          .then((result) => setRelatedTickets(result.tickets))
+          .catch((error) => console.error('Failed to fetch related tickets:', error));
+      } else {
+        setRelatedTickets([]);
+      }
     }
   }, [editingTicket]);
 
@@ -350,6 +360,43 @@ export function TicketEditor() {
               </button>
             </div>
           </div>
+
+          {/* Related Tickets (Feature Group) */}
+          {relatedTickets.length > 0 && (
+            <div>
+              <label className="block font-pixel text-pixel-xs text-beige/70 mb-2">
+                <span className="mr-2">🔗</span>
+                Related Quests
+              </label>
+              <div className="space-y-2">
+                {relatedTickets.map((related) => (
+                  <div
+                    key={related.id}
+                    className="flex items-center gap-2 bg-stone-panel px-3 py-2 border-2 border-border-gold rounded cursor-pointer hover:bg-stone-secondary transition-colors"
+                    onClick={() => setEditingTicket(related)}
+                  >
+                    <span className="text-gold">⚔️</span>
+                    <span className="flex-1 font-readable text-base text-beige truncate">
+                      {related.title}
+                    </span>
+                    <div className="flex gap-1">
+                      {related.labels.slice(0, 2).map((label) => (
+                        <span
+                          key={label}
+                          className="text-xs px-1.5 py-0.5 bg-stone-primary border border-border-gold rounded text-beige/70"
+                        >
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-beige/50">
+                These quests are part of the same feature group
+              </p>
+            </div>
+          )}
 
           {/* Required Skills (AI-Inferred) */}
           {formData.requiredSkills && formData.requiredSkills.length > 0 && (

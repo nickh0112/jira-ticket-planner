@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS tickets (
   created_in_jira INTEGER NOT NULL DEFAULT 0,
   jira_key TEXT,
   jira_url TEXT,
+  feature_group_id TEXT, -- UUID to link related tickets (e.g., FE/BE/ML split from same feature)
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -69,6 +70,7 @@ CREATE TABLE IF NOT EXISTS jira_sprints (
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
 CREATE INDEX IF NOT EXISTS idx_tickets_epic_id ON tickets(epic_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_assignee_id ON tickets(assignee_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_feature_group_id ON tickets(feature_group_id);
 
 -- Agent knowledge table for storing learned patterns
 CREATE TABLE IF NOT EXISTS agent_knowledge (

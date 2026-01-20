@@ -71,6 +71,9 @@ class StorageService {
     if (!ticketColumnNames.includes('required_skills')) {
       this.db.exec("ALTER TABLE tickets ADD COLUMN required_skills TEXT NOT NULL DEFAULT '[]'");
     }
+    if (!ticketColumnNames.includes('feature_group_id')) {
+      this.db.exec('ALTER TABLE tickets ADD COLUMN feature_group_id TEXT');
+    }
 
     // Add new columns to jira_config for multi-board support
     const jiraConfigColumns = this.db.prepare("PRAGMA table_info(jira_config)").all() as { name: string }[];
@@ -147,8 +150,8 @@ class StorageService {
     const id = uuidv4();
     const now = new Date().toISOString();
     const stmt = this.db.prepare(`
-      INSERT INTO tickets (id, title, description, acceptance_criteria, ticket_type, priority, epic_id, assignee_id, labels, required_skills, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO tickets (id, title, description, acceptance_criteria, ticket_type, priority, epic_id, assignee_id, labels, required_skills, feature_group_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       id,
@@ -161,6 +164,7 @@ class StorageService {
       input.assigneeId ?? null,
       JSON.stringify(input.labels ?? []),
       JSON.stringify(input.requiredSkills ?? []),
+      input.featureGroupId ?? null,
       now,
       now
     );
@@ -263,6 +267,10 @@ class StorageService {
       updates.push('jira_url = ?');
       params.push(input.jiraUrl);
     }
+    if (input.featureGroupId !== undefined) {
+      updates.push('feature_group_id = ?');
+      params.push(input.featureGroupId);
+    }
 
     if (updates.length === 0) return existing;
 
@@ -281,6 +289,12 @@ class StorageService {
     return result.changes > 0;
   }
 
+  getTicketsByFeatureGroup(featureGroupId: string): Ticket[] {
+    const stmt = this.db.prepare('SELECT * FROM tickets WHERE feature_group_id = ? ORDER BY created_at ASC');
+    const rows = stmt.all(featureGroupId) as any[];
+    return rows.map(this.mapTicketRow);
+  }
+
   private mapTicketRow(row: any): Ticket {
     return {
       id: row.id,
@@ -297,6 +311,7 @@ class StorageService {
       createdInJira: Boolean(row.created_in_jira),
       jiraKey: row.jira_key ?? undefined,
       jiraUrl: row.jira_url ?? undefined,
+      featureGroupId: row.feature_group_id ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

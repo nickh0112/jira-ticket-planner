@@ -17,6 +17,7 @@ export interface Ticket {
   createdInJira: boolean;
   jiraKey?: string;
   jiraUrl?: string;
+  featureGroupId: string | null;  // Links related tickets (e.g., FE/BE/ML split)
   createdAt: string;
   updatedAt: string;
 }
@@ -31,6 +32,7 @@ export interface CreateTicketInput {
   assigneeId?: string | null;
   labels?: string[];
   requiredSkills?: string[];
+  featureGroupId?: string | null;  // Links related tickets (e.g., FE/BE/ML split)
 }
 
 export interface UpdateTicketInput {
@@ -47,4 +49,5 @@ export interface UpdateTicketInput {
   createdInJira?: boolean;
   jiraKey?: string;
   jiraUrl?: string;
+  featureGroupId?: string | null;  // Links related tickets (e.g., FE/BE/ML split)
 }

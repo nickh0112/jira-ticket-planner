@@ -43,6 +43,43 @@ export function createTicketsRouter(storage: ReturnType<typeof createStorageServ
     }
   });
 
+  // Get related tickets by feature group
+  router.get('/:id/related', (req, res) => {
+    try {
+      const ticket = storage.getTicket(req.params.id);
+      if (!ticket) {
+        const response: ApiResponse<never> = {
+          success: false,
+          error: 'Ticket not found',
+        };
+        return res.status(404).json(response);
+      }
+
+      if (!ticket.featureGroupId) {
+        const response: ApiResponse<{ tickets: Ticket[] }> = {
+          success: true,
+          data: { tickets: [] },
+        };
+        return res.json(response);
+      }
+
+      const related = storage.getTicketsByFeatureGroup(ticket.featureGroupId)
+        .filter((t) => t.id !== ticket.id);
+
+      const response: ApiResponse<{ tickets: Ticket[] }> = {
+        success: true,
+        data: { tickets: related },
+      };
+      res.json(response);
+    } catch (error) {
+      const response: ApiResponse<never> = {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch related tickets',
+      };
+      res.status(500).json(response);
+    }
+  });
+
   // Get single ticket
   router.get('/:id', (req, res) => {
     try {

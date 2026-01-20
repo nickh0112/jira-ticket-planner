@@ -108,6 +108,10 @@ export async function deleteTicket(id: string): Promise<void> {
   });
 }
 
+export async function getRelatedTickets(id: string): Promise<{ tickets: Ticket[] }> {
+  return fetchApi<{ tickets: Ticket[] }>(`/tickets/${id}/related`);
+}
+
 // Team Members
 export async function getTeamMembers(): Promise<{ members: TeamMember[] }> {
   return fetchApi<{ members: TeamMember[] }>('/team');
