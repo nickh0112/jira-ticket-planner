@@ -309,6 +309,27 @@ export class JiraService {
     }
   }
 
+  async detectSprintFieldId(config: JiraConfig): Promise<string | null> {
+    try {
+      const fields = await this.getAllFields(config);
+      // Sprint field is usually named "Sprint" and is a custom field
+      const sprintField = fields.find(
+        (f) => f.name.toLowerCase() === 'sprint' && f.custom
+      );
+      if (sprintField) {
+        console.log(`Detected sprint field: ${sprintField.name} (${sprintField.id})`);
+      } else {
+        console.log('Could not auto-detect sprint field. Available custom fields:',
+          fields.filter(f => f.custom).map(f => `${f.name} (${f.id})`).join(', ')
+        );
+      }
+      return sprintField?.id ?? null;
+    } catch (error) {
+      console.error('Failed to detect sprint field ID:', error);
+      return null;
+    }
+  }
+
   async addIssueToSprint(config: JiraConfig, issueId: string, sprintId: number): Promise<boolean> {
     try {
       const url = `${config.baseUrl}/rest/agile/1.0/sprint/${sprintId}/issue`;
@@ -662,7 +683,13 @@ export class JiraService {
     const sprintFieldId = config.sprintFieldId || 'customfield_10020';
     const sprintData = fields[sprintFieldId];
 
-    if (!sprintData) return null;
+    // Debug logging
+    if (!sprintData) {
+      console.log(`Sprint field ${sprintFieldId} not found in ticket fields. Available custom fields:`,
+        Object.keys(fields).filter(k => k.startsWith('customfield')).join(', ')
+      );
+      return null;
+    }
 
     // Sprint field is typically an array, get the most recent/active sprint
     const sprints = Array.isArray(sprintData) ? sprintData : [sprintData];

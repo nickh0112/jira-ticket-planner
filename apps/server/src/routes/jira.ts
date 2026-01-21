@@ -257,7 +257,7 @@ export function createJiraRouter(storage: ReturnType<typeof createStorageService
         return res.status(400).json(response);
       }
 
-      const config = storage.getJiraConfig();
+      let config = storage.getJiraConfig();
       if (!config) {
         const response: ApiResponse<never> = {
           success: false,
@@ -266,20 +266,29 @@ export function createJiraRouter(storage: ReturnType<typeof createStorageService
         return res.status(400).json(response);
       }
 
+      // Auto-detect sprint field ID if not already configured
+      if (!config.sprintFieldId) {
+        const detectedSprintFieldId = await jiraService.detectSprintFieldId(config);
+        if (detectedSprintFieldId) {
+          storage.updateJiraConfig({
+            ...config,
+            sprintFieldId: detectedSprintFieldId,
+          });
+          config = storage.getJiraConfig()!; // Refresh config
+          console.log(`Auto-detected sprint field ID: ${detectedSprintFieldId}`);
+        }
+      }
+
       // Fetch team members from team-filtered tickets (not all project users)
       const jiraUsers = await jiraService.getTeamMembersFromTickets(config);
 
-      // Convert Jira users to team members
-      const teamMemberInputs = jiraUsers.map((user) => ({
-        name: user.displayName,
-        role: 'Team Member',
-        skills: [] as string[],
-        jiraUsername: user.emailAddress || user.displayName || user.accountId,
-        jiraAccountId: user.accountId,
-      }));
-
-      // Replace team members in database
-      const syncedMembers = storage.replaceTeamMembers(teamMemberInputs);
+      // Only update jiraAccountId on existing members, don't add new ones
+      const memberUpdateResult = storage.updateTeamMembersJiraAccountIds(
+        jiraUsers.map((user) => ({
+          jiraUsername: user.emailAddress || user.displayName || user.accountId,
+          jiraAccountId: user.accountId,
+        }))
+      );
 
       // Fetch epics from Jira
       const jiraEpics = await jiraService.getEpics(config);
@@ -308,7 +317,7 @@ export function createJiraRouter(storage: ReturnType<typeof createStorageService
       }
 
       const result: JiraSyncResult = {
-        users: { synced: syncedMembers.length, total: jiraUsers.length },
+        users: { synced: memberUpdateResult.updated, total: jiraUsers.length },
         epics: { synced: syncedEpics.length, total: jiraEpics.length },
         sprints: { synced: sprintsSynced, total: sprintsSynced },
       };
