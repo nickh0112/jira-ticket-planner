@@ -182,7 +182,7 @@ export class JiraSyncService extends EventEmitter {
     const jql = jqlParts.join(' AND ') + ' ORDER BY resolved DESC';
     console.log(`[sync] Fetching completed tickets: ${jql}`);
 
-    const tickets = await this.jiraService!.getRecentTickets(jiraConfig, { jql, maxResults: 200 });
+    const tickets = await this.jiraService!.getRecentTickets(jiraConfig, { jql });
 
     let ticketsProcessed = 0;
     let totalXpAwarded = 0;
@@ -301,6 +301,81 @@ export class JiraSyncService extends EventEmitter {
       syncState: this.storage.getJiraSyncState(),
       hasTimer: this.syncTimer !== null,
     };
+  }
+
+  /**
+   * Sync active (non-completed) tickets from Jira into local database
+   * This populates the tickets table so PM Dashboard can show current assignments
+   */
+  async syncActiveTickets(): Promise<{ synced: number; errors: string[] }> {
+    if (!this.jiraService) {
+      return { synced: 0, errors: ['Jira service not configured'] };
+    }
+
+    const config = this.storage.getJiraConfig();
+    if (!config) {
+      return { synced: 0, errors: ['No Jira config'] };
+    }
+
+    const teamMembers = this.storage.getTeamMembers();
+    const errors: string[] = [];
+    let synced = 0;
+
+    try {
+      // Get active tickets from Jira (not done/closed)
+      const activeTickets = await this.jiraService.getActiveTickets(config);
+
+      for (const ticket of activeTickets) {
+        try {
+          // Find matching team member by jira_account_id, falling back to jiraUsername
+          let assigneeId: string | null = null;
+          if (ticket.assignee) {
+            // First try exact accountId match
+            let member = teamMembers.find(m =>
+              m.jiraAccountId === ticket.assignee?.accountId
+            );
+
+            // Fall back to jiraUsername match (case-insensitive)
+            if (!member) {
+              member = teamMembers.find(m => {
+                if (!m.jiraUsername) return false;
+                const jiraUsername = m.jiraUsername.toLowerCase();
+                return jiraUsername === ticket.assignee!.displayName.toLowerCase() ||
+                       jiraUsername === ticket.assignee!.accountId.toLowerCase();
+              });
+            }
+
+            assigneeId = member?.id || null;
+          }
+
+          // Normalize priority to match database constraint (lowercase)
+          const validPriorities = ['highest', 'high', 'medium', 'low', 'lowest'] as const;
+          const normalizedPriority = validPriorities.includes(ticket.priority.toLowerCase() as any)
+            ? (ticket.priority.toLowerCase() as typeof validPriorities[number])
+            : 'medium';
+
+          // Upsert ticket into local database
+          this.storage.upsertJiraTicket({
+            jiraKey: ticket.key,
+            title: ticket.summary,
+            description: ticket.description || '',
+            assigneeId,
+            status: ticket.status,
+            priority: normalizedPriority,
+          });
+          synced++;
+        } catch (e) {
+          errors.push(`Failed to sync ${ticket.key}: ${e}`);
+        }
+      }
+
+      console.log(`[sync] Synced ${synced} active tickets from Jira`);
+      return { synced, errors };
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error';
+      errors.push(`Failed to fetch active tickets: ${errorMessage}`);
+      return { synced, errors };
+    }
   }
 }
 
