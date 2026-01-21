@@ -499,6 +499,7 @@ export class JiraService {
         'components',
         'parent', // For epic link in next-gen projects
         ...(config.epicLinkField ? [config.epicLinkField] : []),
+        ...(config.sprintFieldId ? [config.sprintFieldId] : ['customfield_10020']), // Sprint field
         ...includeFields,
       ];
 
@@ -608,6 +609,28 @@ export class JiraService {
     return this.getRecentTickets(config, { jql, maxResults });
   }
 
+  /**
+   * Fetch tickets for a specific team member
+   * Used for character screen display
+   */
+  async getTicketsForMember(
+    config: JiraConfig,
+    accountId: string,
+    options: { maxResults?: number } = {}
+  ): Promise<JiraTicketForLearning[]> {
+    const { maxResults = 100 } = options;
+
+    // Build JQL with team filter if configured
+    let jql: string;
+    if (config.teamValue) {
+      jql = `project = ${config.projectKey} AND assignee = "${accountId}" AND cf[10104] = "${config.teamValue}" ORDER BY updated DESC`;
+    } else {
+      jql = `project = ${config.projectKey} AND assignee = "${accountId}" ORDER BY updated DESC`;
+    }
+
+    return this.getRecentTickets(config, { jql, maxResults });
+  }
+
   private mapJiraIssueToLearningTicket(issue: any, config: JiraConfig): JiraTicketForLearning {
     const fields = issue.fields;
 
@@ -630,6 +653,32 @@ export class JiraService {
       components: (fields.components || []).map((c: any) => c.name),
       created: fields.created,
       updated: fields.updated,
+      sprint: this.extractSprint(fields, config),
+    };
+  }
+
+  private extractSprint(fields: any, config: JiraConfig): { id: number; name: string; state: 'active' | 'future' | 'closed' } | null {
+    // Try configured sprint field first, then default
+    const sprintFieldId = config.sprintFieldId || 'customfield_10020';
+    const sprintData = fields[sprintFieldId];
+
+    if (!sprintData) return null;
+
+    // Sprint field is typically an array, get the most recent/active sprint
+    const sprints = Array.isArray(sprintData) ? sprintData : [sprintData];
+    if (sprints.length === 0) return null;
+
+    // Prefer active sprint, then future, then most recent closed
+    const activeSprint = sprints.find((s: any) => s.state === 'active');
+    const futureSprint = sprints.find((s: any) => s.state === 'future');
+    const sprint = activeSprint || futureSprint || sprints[sprints.length - 1];
+
+    if (!sprint || !sprint.id) return null;
+
+    return {
+      id: sprint.id,
+      name: sprint.name || 'Unknown Sprint',
+      state: sprint.state || 'closed',
     };
   }
 
@@ -685,6 +734,7 @@ export interface JiraTicketForLearning {
   components: string[];
   created: string;
   updated: string;
+  sprint: { id: number; name: string; state: 'active' | 'future' | 'closed' } | null;
 }
 
 export const createJiraService = (): JiraService | null => {

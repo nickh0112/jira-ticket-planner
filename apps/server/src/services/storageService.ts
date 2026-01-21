@@ -32,6 +32,16 @@ import type {
   UpdateWorldConfigInput,
   UpdateJiraSyncConfigInput,
   UpdateMemberPositionInput,
+  PMAssignment,
+  CreatePMAssignmentInput,
+  EngineerActivity,
+  PMAlert,
+  CreatePMAlertInput,
+  AITicketSuggestion,
+  CreateAISuggestionInput,
+  PMConfig,
+  UpdatePMConfigInput,
+  AISuggestionStatus,
 } from '@jira-planner/shared';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -103,6 +113,9 @@ class StorageService {
     if (!jiraConfigColumnNames.includes('regression_default_value')) {
       this.db.exec('ALTER TABLE jira_config ADD COLUMN regression_default_value TEXT');
     }
+    if (!jiraConfigColumnNames.includes('sprint_field_id')) {
+      this.db.exec('ALTER TABLE jira_config ADD COLUMN sprint_field_id TEXT');
+    }
 
     // Create jira_sprints table if it doesn't exist
     this.db.exec(`
@@ -130,6 +143,9 @@ class StorageService {
     }
     if (!teamMemberColumnNames.includes('position_y')) {
       this.db.exec('ALTER TABLE team_members ADD COLUMN position_y REAL');
+    }
+    if (!teamMemberColumnNames.includes('jira_account_id')) {
+      this.db.exec('ALTER TABLE team_members ADD COLUMN jira_account_id TEXT');
     }
 
     // Initialize world_config with default if not exists
@@ -322,10 +338,10 @@ class StorageService {
     const id = uuidv4();
     const now = new Date().toISOString();
     const stmt = this.db.prepare(`
-      INSERT INTO team_members (id, name, role, skills, jira_username, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO team_members (id, name, role, skills, jira_username, jira_account_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(id, input.name, input.role, JSON.stringify(input.skills), input.jiraUsername ?? null, now, now);
+    stmt.run(id, input.name, input.role, JSON.stringify(input.skills), input.jiraUsername ?? null, input.jiraAccountId ?? null, now, now);
     return this.getTeamMember(id)!;
   }
 
@@ -364,6 +380,10 @@ class StorageService {
       updates.push('jira_username = ?');
       params.push(input.jiraUsername);
     }
+    if (input.jiraAccountId !== undefined) {
+      updates.push('jira_account_id = ?');
+      params.push(input.jiraAccountId);
+    }
 
     if (updates.length === 0) return existing;
 
@@ -389,6 +409,7 @@ class StorageService {
       role: row.role,
       skills: JSON.parse(row.skills),
       jiraUsername: row.jira_username ?? undefined,
+      jiraAccountId: row.jira_account_id ?? undefined,
       memberType: row.member_type || 'human',
       position: row.position_x != null && row.position_y != null
         ? { x: row.position_x, y: row.position_y }
@@ -487,7 +508,7 @@ class StorageService {
         SET base_url = ?, project_key = ?, epic_link_field = ?, team_name = ?,
             default_board_id = ?, design_board_id = ?, work_type_field_id = ?,
             team_field_id = ?, team_value = ?, regression_field_id = ?,
-            regression_default_value = ?, updated_at = ?
+            regression_default_value = ?, sprint_field_id = ?, updated_at = ?
         WHERE id = ?
       `);
       stmt.run(
@@ -502,6 +523,7 @@ class StorageService {
         input.teamValue ?? null,
         input.regressionFieldId ?? null,
         input.regressionDefaultValue ?? null,
+        input.sprintFieldId ?? null,
         now,
         existing.id
       );
@@ -512,8 +534,8 @@ class StorageService {
         INSERT INTO jira_config (id, base_url, project_key, epic_link_field, team_name,
                                  default_board_id, design_board_id, work_type_field_id,
                                  team_field_id, team_value, regression_field_id,
-                                 regression_default_value, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                 regression_default_value, sprint_field_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       stmt.run(
         id,
@@ -528,6 +550,7 @@ class StorageService {
         input.teamValue ?? null,
         input.regressionFieldId ?? null,
         input.regressionDefaultValue ?? null,
+        input.sprintFieldId ?? null,
         now,
         now
       );
@@ -549,6 +572,7 @@ class StorageService {
       teamValue: row.team_value ?? undefined,
       regressionFieldId: row.regression_field_id ?? undefined,
       regressionDefaultValue: row.regression_default_value ?? undefined,
+      sprintFieldId: row.sprint_field_id ?? undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -1422,6 +1446,425 @@ class StorageService {
     `);
     stmt.run(position.x, position.y, new Date().toISOString(), teamMemberId);
     return this.getTeamMember(teamMemberId);
+  }
+
+  // ============================================================================
+  // PM Assignment Methods
+  // ============================================================================
+
+  createPMAssignment(input: CreatePMAssignmentInput): PMAssignment {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO pm_assignments (id, ticket_id, jira_key, assignee_id, assigned_by, assigned_at, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      id,
+      input.ticketId ?? null,
+      input.jiraKey ?? null,
+      input.assigneeId,
+      input.assignedBy ?? 'pm',
+      now,
+      now
+    );
+    return this.getPMAssignment(id)!;
+  }
+
+  getPMAssignment(id: string): PMAssignment | null {
+    const stmt = this.db.prepare('SELECT * FROM pm_assignments WHERE id = ?');
+    const row = stmt.get(id) as any;
+    return row ? this.mapPMAssignmentRow(row) : null;
+  }
+
+  getPMAssignments(filters?: { assigneeId?: string; completed?: boolean }): PMAssignment[] {
+    let query = 'SELECT * FROM pm_assignments WHERE 1=1';
+    const params: any[] = [];
+
+    if (filters?.assigneeId) {
+      query += ' AND assignee_id = ?';
+      params.push(filters.assigneeId);
+    }
+    if (filters?.completed !== undefined) {
+      if (filters.completed) {
+        query += ' AND completed_at IS NOT NULL';
+      } else {
+        query += ' AND completed_at IS NULL';
+      }
+    }
+
+    query += ' ORDER BY assigned_at DESC';
+
+    const stmt = this.db.prepare(query);
+    const rows = stmt.all(...params) as any[];
+    return rows.map(this.mapPMAssignmentRow);
+  }
+
+  getLastAssignmentForMember(memberId: string): PMAssignment | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM pm_assignments
+      WHERE assignee_id = ?
+      ORDER BY assigned_at DESC
+      LIMIT 1
+    `);
+    const row = stmt.get(memberId) as any;
+    return row ? this.mapPMAssignmentRow(row) : null;
+  }
+
+  getActiveAssignmentsForMember(memberId: string): PMAssignment[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM pm_assignments
+      WHERE assignee_id = ? AND completed_at IS NULL
+      ORDER BY assigned_at DESC
+    `);
+    const rows = stmt.all(memberId) as any[];
+    return rows.map(this.mapPMAssignmentRow);
+  }
+
+  completePMAssignment(id: string): PMAssignment | null {
+    const assignment = this.getPMAssignment(id);
+    if (!assignment) return null;
+
+    const now = new Date();
+    const assignedAt = new Date(assignment.assignedAt);
+    const hoursToComplete = (now.getTime() - assignedAt.getTime()) / (1000 * 60 * 60);
+
+    const stmt = this.db.prepare(`
+      UPDATE pm_assignments
+      SET completed_at = ?, time_to_completion_hours = ?
+      WHERE id = ?
+    `);
+    stmt.run(now.toISOString(), hoursToComplete, id);
+    return this.getPMAssignment(id);
+  }
+
+  getAvgCompletionTimeForMember(memberId: string): number | null {
+    const stmt = this.db.prepare(`
+      SELECT AVG(time_to_completion_hours) as avg_hours
+      FROM pm_assignments
+      WHERE assignee_id = ? AND time_to_completion_hours IS NOT NULL
+    `);
+    const row = stmt.get(memberId) as any;
+    return row?.avg_hours ?? null;
+  }
+
+  private mapPMAssignmentRow(row: any): PMAssignment {
+    return {
+      id: row.id,
+      ticketId: row.ticket_id ?? null,
+      jiraKey: row.jira_key ?? null,
+      assigneeId: row.assignee_id,
+      assignedBy: row.assigned_by,
+      assignedAt: row.assigned_at,
+      completedAt: row.completed_at ?? null,
+      timeToCompletionHours: row.time_to_completion_hours ?? null,
+      createdAt: row.created_at,
+    };
+  }
+
+  // ============================================================================
+  // Engineer Activity Methods
+  // ============================================================================
+
+  getEngineerActivity(memberId: string, date?: string): EngineerActivity | null {
+    const targetDate = date ?? new Date().toISOString().split('T')[0];
+    const stmt = this.db.prepare(`
+      SELECT * FROM engineer_activity
+      WHERE team_member_id = ? AND activity_date = ?
+    `);
+    const row = stmt.get(memberId, targetDate) as any;
+    return row ? this.mapEngineerActivityRow(row) : null;
+  }
+
+  getEngineerActivityRange(memberId: string, startDate: string, endDate: string): EngineerActivity[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM engineer_activity
+      WHERE team_member_id = ? AND activity_date >= ? AND activity_date <= ?
+      ORDER BY activity_date DESC
+    `);
+    const rows = stmt.all(memberId, startDate, endDate) as any[];
+    return rows.map(this.mapEngineerActivityRow);
+  }
+
+  getLastActivityForMember(memberId: string): EngineerActivity | null {
+    const stmt = this.db.prepare(`
+      SELECT * FROM engineer_activity
+      WHERE team_member_id = ? AND last_activity_at IS NOT NULL
+      ORDER BY activity_date DESC
+      LIMIT 1
+    `);
+    const row = stmt.get(memberId) as any;
+    return row ? this.mapEngineerActivityRow(row) : null;
+  }
+
+  recordEngineerActivity(memberId: string, updates: { ticketsAssigned?: number; ticketsCompleted?: number }): EngineerActivity {
+    const today = new Date().toISOString().split('T')[0];
+    const now = new Date().toISOString();
+    const id = `${memberId}-${today}`;
+
+    // Try to insert or update
+    const existing = this.getEngineerActivity(memberId, today);
+
+    if (existing) {
+      const updateFields: string[] = [];
+      const params: any[] = [];
+
+      if (updates.ticketsAssigned !== undefined) {
+        updateFields.push('tickets_assigned = tickets_assigned + ?');
+        params.push(updates.ticketsAssigned);
+      }
+      if (updates.ticketsCompleted !== undefined) {
+        updateFields.push('tickets_completed = tickets_completed + ?');
+        params.push(updates.ticketsCompleted);
+      }
+
+      updateFields.push('last_activity_at = ?');
+      params.push(now);
+      params.push(memberId);
+      params.push(today);
+
+      const stmt = this.db.prepare(`
+        UPDATE engineer_activity SET ${updateFields.join(', ')}
+        WHERE team_member_id = ? AND activity_date = ?
+      `);
+      stmt.run(...params);
+    } else {
+      const stmt = this.db.prepare(`
+        INSERT INTO engineer_activity (id, team_member_id, activity_date, tickets_assigned, tickets_completed, last_activity_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      stmt.run(
+        id,
+        memberId,
+        today,
+        updates.ticketsAssigned ?? 0,
+        updates.ticketsCompleted ?? 0,
+        now
+      );
+    }
+
+    return this.getEngineerActivity(memberId, today)!;
+  }
+
+  private mapEngineerActivityRow(row: any): EngineerActivity {
+    return {
+      id: row.id,
+      teamMemberId: row.team_member_id,
+      activityDate: row.activity_date,
+      ticketsAssigned: row.tickets_assigned,
+      ticketsCompleted: row.tickets_completed,
+      lastActivityAt: row.last_activity_at ?? null,
+    };
+  }
+
+  // ============================================================================
+  // PM Alert Methods
+  // ============================================================================
+
+  createPMAlert(input: CreatePMAlertInput): PMAlert {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO pm_alerts (id, team_member_id, alert_type, severity, message, is_dismissed, created_at)
+      VALUES (?, ?, ?, ?, ?, 0, ?)
+    `);
+    stmt.run(id, input.teamMemberId, input.alertType, input.severity, input.message, now);
+    return this.getPMAlert(id)!;
+  }
+
+  getPMAlert(id: string): PMAlert | null {
+    const stmt = this.db.prepare('SELECT * FROM pm_alerts WHERE id = ?');
+    const row = stmt.get(id) as any;
+    return row ? this.mapPMAlertRow(row) : null;
+  }
+
+  getActivePMAlerts(): PMAlert[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM pm_alerts
+      WHERE is_dismissed = 0
+      ORDER BY created_at DESC
+    `);
+    const rows = stmt.all() as any[];
+    return rows.map(this.mapPMAlertRow);
+  }
+
+  getPMAlertsForMember(memberId: string): PMAlert[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM pm_alerts
+      WHERE team_member_id = ?
+      ORDER BY created_at DESC
+    `);
+    const rows = stmt.all(memberId) as any[];
+    return rows.map(this.mapPMAlertRow);
+  }
+
+  hasActiveAlertForMember(memberId: string, alertType: string): boolean {
+    const stmt = this.db.prepare(`
+      SELECT COUNT(*) as count FROM pm_alerts
+      WHERE team_member_id = ? AND alert_type = ? AND is_dismissed = 0
+    `);
+    const row = stmt.get(memberId, alertType) as { count: number };
+    return row.count > 0;
+  }
+
+  dismissPMAlert(id: string): void {
+    const stmt = this.db.prepare('UPDATE pm_alerts SET is_dismissed = 1 WHERE id = ?');
+    stmt.run(id);
+  }
+
+  dismissAlertsForMember(memberId: string): void {
+    const stmt = this.db.prepare('UPDATE pm_alerts SET is_dismissed = 1 WHERE team_member_id = ?');
+    stmt.run(memberId);
+  }
+
+  private mapPMAlertRow(row: any): PMAlert {
+    return {
+      id: row.id,
+      teamMemberId: row.team_member_id,
+      alertType: row.alert_type,
+      severity: row.severity,
+      message: row.message,
+      isDismissed: Boolean(row.is_dismissed),
+      createdAt: row.created_at,
+    };
+  }
+
+  // ============================================================================
+  // AI Ticket Suggestion Methods
+  // ============================================================================
+
+  createAISuggestion(input: CreateAISuggestionInput): AITicketSuggestion {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO ai_ticket_suggestions (id, team_member_id, ticket_id, jira_key, title, reasoning, skill_match_score, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+    `);
+    stmt.run(
+      id,
+      input.teamMemberId,
+      input.ticketId ?? null,
+      input.jiraKey ?? null,
+      input.title,
+      input.reasoning,
+      input.skillMatchScore,
+      now
+    );
+    return this.getAISuggestion(id)!;
+  }
+
+  getAISuggestion(id: string): AITicketSuggestion | null {
+    const stmt = this.db.prepare('SELECT * FROM ai_ticket_suggestions WHERE id = ?');
+    const row = stmt.get(id) as any;
+    return row ? this.mapAISuggestionRow(row) : null;
+  }
+
+  getPendingAISuggestions(memberId?: string): AITicketSuggestion[] {
+    let query = "SELECT * FROM ai_ticket_suggestions WHERE status = 'pending'";
+    const params: any[] = [];
+
+    if (memberId) {
+      query += ' AND team_member_id = ?';
+      params.push(memberId);
+    }
+
+    query += ' ORDER BY skill_match_score DESC, created_at DESC';
+
+    const stmt = this.db.prepare(query);
+    const rows = stmt.all(...params) as any[];
+    return rows.map(this.mapAISuggestionRow);
+  }
+
+  getAISuggestionsForMember(memberId: string): AITicketSuggestion[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM ai_ticket_suggestions
+      WHERE team_member_id = ?
+      ORDER BY created_at DESC
+    `);
+    const rows = stmt.all(memberId) as any[];
+    return rows.map(this.mapAISuggestionRow);
+  }
+
+  updateAISuggestionStatus(id: string, status: AISuggestionStatus): AITicketSuggestion | null {
+    const stmt = this.db.prepare('UPDATE ai_ticket_suggestions SET status = ? WHERE id = ?');
+    stmt.run(status, id);
+    return this.getAISuggestion(id);
+  }
+
+  clearPendingSuggestionsForMember(memberId: string): void {
+    const stmt = this.db.prepare(`
+      DELETE FROM ai_ticket_suggestions
+      WHERE team_member_id = ? AND status = 'pending'
+    `);
+    stmt.run(memberId);
+  }
+
+  private mapAISuggestionRow(row: any): AITicketSuggestion {
+    return {
+      id: row.id,
+      teamMemberId: row.team_member_id,
+      ticketId: row.ticket_id ?? null,
+      jiraKey: row.jira_key ?? null,
+      title: row.title,
+      reasoning: row.reasoning,
+      skillMatchScore: row.skill_match_score,
+      status: row.status,
+      createdAt: row.created_at,
+    };
+  }
+
+  // ============================================================================
+  // PM Config Methods
+  // ============================================================================
+
+  getPMConfig(): PMConfig {
+    const stmt = this.db.prepare("SELECT * FROM pm_config WHERE id = 'singleton'");
+    let row = stmt.get() as any;
+
+    // Initialize if not exists
+    if (!row) {
+      this.db.exec("INSERT INTO pm_config (id) VALUES ('singleton')");
+      row = stmt.get() as any;
+    }
+
+    return this.mapPMConfigRow(row);
+  }
+
+  updatePMConfig(updates: UpdatePMConfigInput): PMConfig {
+    const updateFields: string[] = [];
+    const params: any[] = [];
+
+    if (updates.underutilizationDays !== undefined) {
+      updateFields.push('underutilization_days = ?');
+      params.push(updates.underutilizationDays);
+    }
+    if (updates.inactivityDays !== undefined) {
+      updateFields.push('inactivity_days = ?');
+      params.push(updates.inactivityDays);
+    }
+    if (updates.checkIntervalHours !== undefined) {
+      updateFields.push('check_interval_hours = ?');
+      params.push(updates.checkIntervalHours);
+    }
+
+    if (updateFields.length === 0) return this.getPMConfig();
+
+    updateFields.push('updated_at = ?');
+    params.push(new Date().toISOString());
+
+    const stmt = this.db.prepare(`UPDATE pm_config SET ${updateFields.join(', ')} WHERE id = 'singleton'`);
+    stmt.run(...params);
+    return this.getPMConfig();
+  }
+
+  private mapPMConfigRow(row: any): PMConfig {
+    return {
+      id: row.id,
+      underutilizationDays: row.underutilization_days,
+      inactivityDays: row.inactivity_days,
+      checkIntervalHours: row.check_interval_hours,
+      updatedAt: row.updated_at,
+    };
   }
 
   close() {

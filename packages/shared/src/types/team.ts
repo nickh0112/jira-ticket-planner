@@ -6,6 +6,7 @@ export interface TeamMember {
   role: string;
   skills: string[];
   jiraUsername?: string;
+  jiraAccountId?: string;
   memberType: MemberType;
   position?: { x: number; y: number };
   createdAt: string;
@@ -17,6 +18,7 @@ export interface CreateTeamMemberInput {
   role: string;
   skills: string[];
   jiraUsername?: string;
+  jiraAccountId?: string;
 }
 
 export interface UpdateTeamMemberInput {
@@ -24,4 +26,5 @@ export interface UpdateTeamMemberInput {
   role?: string;
   skills?: string[];
   jiraUsername?: string;
+  jiraAccountId?: string;
 }

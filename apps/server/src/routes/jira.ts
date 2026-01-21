@@ -10,6 +10,7 @@ import type {
   JiraEpic,
   JiraSyncResult,
   Ticket,
+  MemberTicket,
 } from '@jira-planner/shared';
 import type { createStorageService } from '../services/storageService.js';
 import { createJiraService } from '../services/jiraService.js';
@@ -274,6 +275,7 @@ export function createJiraRouter(storage: ReturnType<typeof createStorageService
         role: 'Team Member',
         skills: [] as string[],
         jiraUsername: user.emailAddress || user.displayName || user.accountId,
+        jiraAccountId: user.accountId,
       }));
 
       // Replace team members in database
@@ -471,6 +473,55 @@ export function createJiraRouter(storage: ReturnType<typeof createStorageService
       const response: ApiResponse<never> = {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to create Jira issues',
+      };
+      res.status(500).json(response);
+    }
+  });
+
+  // Get tickets for a specific team member (character screen)
+  router.get('/members/:accountId/tickets', async (req, res) => {
+    try {
+      const jiraService = createJiraService();
+      if (!jiraService) {
+        const response: ApiResponse<never> = {
+          success: false,
+          error: 'Jira credentials not configured. Set JIRA_EMAIL and JIRA_API_TOKEN environment variables.',
+        };
+        return res.status(400).json(response);
+      }
+
+      const config = storage.getJiraConfig();
+      if (!config) {
+        const response: ApiResponse<never> = {
+          success: false,
+          error: 'Jira configuration not set',
+        };
+        return res.status(400).json(response);
+      }
+
+      const { accountId } = req.params;
+      const tickets = await jiraService.getTicketsForMember(config, accountId);
+
+      // Map to MemberTicket format
+      const memberTickets: MemberTicket[] = tickets.map((ticket) => ({
+        key: ticket.key,
+        summary: ticket.summary,
+        description: ticket.description,
+        status: ticket.status,
+        priority: ticket.priority,
+        updated: ticket.updated,
+        sprint: ticket.sprint,
+      }));
+
+      const response: ApiResponse<{ tickets: MemberTicket[] }> = {
+        success: true,
+        data: { tickets: memberTickets },
+      };
+      res.json(response);
+    } catch (error) {
+      const response: ApiResponse<never> = {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch member tickets',
       };
       res.status(500).json(response);
     }

@@ -33,6 +33,15 @@ import type {
   UpdateWorldConfigInput,
   CreateCampaignRegionInput,
   UpdateJiraSyncConfigInput,
+  PMDashboardData,
+  EngineerStatus,
+  PMAlert,
+  PMAssignment,
+  AITicketSuggestion,
+  PMConfig,
+  CreatePMAssignmentInput,
+  UpdatePMConfigInput,
+  MemberTicket,
 } from '@jira-planner/shared';
 
 const API_BASE = '/api';
@@ -495,4 +504,133 @@ export async function getTicketCompletions(memberId?: string): Promise<{
 }[]> {
   const params = memberId ? `?memberId=${memberId}` : '';
   return fetchApi(`/sync/completions${params}`);
+}
+
+// ============================================================================
+// PM API
+// ============================================================================
+
+// Get PM dashboard data
+export async function getPMDashboard(): Promise<PMDashboardData> {
+  return fetchApi<PMDashboardData>('/pm/dashboard');
+}
+
+// Get all engineers with status
+export async function getPMEngineers(): Promise<EngineerStatus[]> {
+  return fetchApi<EngineerStatus[]>('/pm/engineers');
+}
+
+// Get single engineer status
+export async function getPMEngineerStatus(id: string): Promise<EngineerStatus> {
+  return fetchApi<EngineerStatus>(`/pm/engineers/${id}`);
+}
+
+// Get active alerts
+export async function getPMAlerts(): Promise<PMAlert[]> {
+  return fetchApi<PMAlert[]>('/pm/alerts');
+}
+
+// Dismiss an alert
+export async function dismissPMAlert(id: string): Promise<void> {
+  await fetchApi<{ dismissed: true }>(`/pm/alerts/${id}/dismiss`, {
+    method: 'POST',
+  });
+}
+
+// Get assignment history
+export async function getPMAssignments(filters?: {
+  assigneeId?: string;
+  completed?: boolean;
+}): Promise<PMAssignment[]> {
+  const params = new URLSearchParams();
+  if (filters?.assigneeId) params.set('assigneeId', filters.assigneeId);
+  if (filters?.completed !== undefined) params.set('completed', String(filters.completed));
+  const query = params.toString();
+  return fetchApi<PMAssignment[]>(`/pm/assignments${query ? `?${query}` : ''}`);
+}
+
+// Record new assignment
+export async function createPMAssignment(input: CreatePMAssignmentInput): Promise<PMAssignment> {
+  return fetchApi<PMAssignment>('/pm/assignments', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+// Complete an assignment
+export async function completePMAssignment(id: string): Promise<PMAssignment> {
+  return fetchApi<PMAssignment>(`/pm/assignments/${id}/complete`, {
+    method: 'POST',
+  });
+}
+
+// Get pending suggestions
+export async function getPMSuggestions(memberId?: string): Promise<AITicketSuggestion[]> {
+  const params = memberId ? `?memberId=${memberId}` : '';
+  return fetchApi<AITicketSuggestion[]>(`/pm/suggestions${params}`);
+}
+
+// Generate new suggestions for a member
+export async function generatePMSuggestions(memberId: string): Promise<AITicketSuggestion[]> {
+  return fetchApi<AITicketSuggestion[]>(`/pm/suggestions/generate/${memberId}`, {
+    method: 'POST',
+  });
+}
+
+// Approve a suggestion
+export async function approvePMSuggestion(id: string): Promise<{
+  suggestion: AITicketSuggestion;
+  assignment: PMAssignment;
+}> {
+  return fetchApi(`/pm/suggestions/${id}/approve`, {
+    method: 'POST',
+  });
+}
+
+// Reject a suggestion
+export async function rejectPMSuggestion(id: string): Promise<AITicketSuggestion> {
+  return fetchApi<AITicketSuggestion>(`/pm/suggestions/${id}/reject`, {
+    method: 'POST',
+  });
+}
+
+// Get PM config
+export async function getPMConfig(): Promise<PMConfig> {
+  return fetchApi<PMConfig>('/pm/config');
+}
+
+// Update PM config
+export async function updatePMConfig(updates: UpdatePMConfigInput): Promise<PMConfig> {
+  return fetchApi<PMConfig>('/pm/config', {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  });
+}
+
+// Get PM service status
+export async function getPMStatus(): Promise<{
+  isRunning: boolean;
+  hasTimer: boolean;
+  config: PMConfig;
+}> {
+  return fetchApi('/pm/status');
+}
+
+// Trigger manual PM check
+export async function triggerPMCheck(): Promise<{
+  alertsCreated: number;
+  suggestionsGenerated: number;
+}> {
+  return fetchApi('/pm/check', {
+    method: 'POST',
+  });
+}
+
+// ============================================================================
+// Member Tickets API
+// ============================================================================
+
+// Get tickets for a specific team member (character screen)
+export async function getMemberTickets(accountId: string): Promise<{ tickets: MemberTicket[] }> {
+  return fetchApi<{ tickets: MemberTicket[] }>(`/jira/members/${accountId}/tickets`);
 }

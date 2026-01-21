@@ -11,6 +11,7 @@ export interface JiraConfig {
   teamValue?: string; // Value to filter epics by (e.g., "Squad - DI")
   regressionFieldId?: string; // Custom field ID for Regression (e.g., "customfield_10372")
   regressionDefaultValue?: string; // Default value for Regression field (e.g., "No")
+  sprintFieldId?: string; // Custom field ID for Sprint (e.g., "customfield_10020")
   createdAt: string;
   updatedAt: string;
 }
@@ -27,6 +28,7 @@ export interface JiraConfigInput {
   teamValue?: string;
   regressionFieldId?: string;
   regressionDefaultValue?: string;
+  sprintFieldId?: string;
 }
 
 export interface JiraCreateIssueResponse {
@@ -78,4 +80,14 @@ export interface JiraSyncResult {
   users: { synced: number; total: number };
   epics: { synced: number; total: number };
   sprints?: { synced: number; total: number };
+}
+
+export interface MemberTicket {
+  key: string;
+  summary: string;
+  description: string;
+  status: string;
+  priority: string;
+  updated: string;
+  sprint: { id: number; name: string; state: string } | null;
 }

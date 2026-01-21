@@ -19,8 +19,10 @@ interface AppState {
   error: string | null;
   statusFilter: TicketStatus | 'all';
   editingTicket: Ticket | null;
-  activeTab: 'tickets' | 'team' | 'epics' | 'settings' | 'agent' | 'world';
+  activeTab: 'tickets' | 'team' | 'epics' | 'settings' | 'agent' | 'world' | 'pm';
   toast: { message: string; type: 'success' | 'error' } | null;
+  selectedMemberId: string | null;
+  selectedTicketKey: string | null;
 
   // Actions
   setTickets: (tickets: Ticket[]) => void;
@@ -40,9 +42,11 @@ interface AppState {
   setError: (error: string | null) => void;
   setStatusFilter: (filter: TicketStatus | 'all') => void;
   setEditingTicket: (ticket: Ticket | null) => void;
-  setActiveTab: (tab: 'tickets' | 'team' | 'epics' | 'settings' | 'agent' | 'world') => void;
+  setActiveTab: (tab: 'tickets' | 'team' | 'epics' | 'settings' | 'agent' | 'world' | 'pm') => void;
   showToast: (message: string, type: 'success' | 'error') => void;
   hideToast: () => void;
+  setSelectedMemberId: (id: string | null) => void;
+  setSelectedTicketKey: (key: string | null) => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -57,6 +61,8 @@ export const useStore = create<AppState>((set) => ({
   editingTicket: null,
   activeTab: 'tickets',
   toast: null,
+  selectedMemberId: null,
+  selectedTicketKey: null,
 
   // Actions
   setTickets: (tickets) => set({ tickets }),
@@ -101,4 +107,6 @@ export const useStore = create<AppState>((set) => ({
   setActiveTab: (tab) => set({ activeTab: tab }),
   showToast: (message, type) => set({ toast: { message, type } }),
   hideToast: () => set({ toast: null }),
+  setSelectedMemberId: (id) => set({ selectedMemberId: id }),
+  setSelectedTicketKey: (key) => set({ selectedTicketKey: key }),
 }));
