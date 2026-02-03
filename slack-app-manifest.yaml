@@ -1,0 +1,29 @@
+_metadata:
+  major_version: 1
+  minor_version: 1
+
+display_information:
+  name: Jira Planner Personal
+  description: Personal productivity tool for tracking action items from Slack conversations
+  background_color: "#4A154B"
+
+features:
+  bot_user:
+    display_name: Jira Planner
+    always_online: false
+
+oauth_config:
+  scopes:
+    # User token scopes (xoxp-) - no admin approval needed for these
+    # These allow the app to act as YOU, not as a bot
+    user:
+      - channels:history    # Read messages in public channels you're in
+      - channels:read       # List public channels
+      - groups:history      # Read messages in private channels you're in
+      - groups:read         # List private channels you're in
+      - users:read          # Get user info (names for messages)
+
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
