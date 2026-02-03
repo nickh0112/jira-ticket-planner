@@ -17,6 +17,7 @@ import { createJiraRouter } from './routes/jira.js';
 import { createAgentRouter } from './routes/agent.js';
 import { createSyncRouter } from './routes/sync.js';
 import { createWorldRouter, createTeamExtensionRouter } from './routes/world.js';
+import { createIntegrationsRouter } from './routes/integrations.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -58,6 +59,7 @@ app.use('/api/jira', createJiraRouter(storage));
 app.use('/api/agent', createAgentRouter(agentService));
 app.use('/api/sync', createSyncRouter(storage, syncService));
 app.use('/api/world', createWorldRouter(storage));
+app.use('/api/integrations', createIntegrationsRouter());
 
 // Health check
 app.get('/api/health', (req, res) => {
