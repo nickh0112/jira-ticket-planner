@@ -54,6 +54,7 @@ export function TeamManager() {
     updateTeamMember: updateMemberInStore,
     removeTeamMember,
     showToast,
+    setSelectedMemberId,
   } = useStore();
 
   const [isAdding, setIsAdding] = useState(false);
@@ -252,7 +253,11 @@ export function TeamManager() {
             const className = getClassName(member.role);
 
             return (
-              <div key={member.id} className="panel p-4">
+              <div
+                key={member.id}
+                className="panel p-4 cursor-pointer hover:border-gold transition-colors"
+                onClick={() => setSelectedMemberId(member.id)}
+              >
                 <div className="flex items-start gap-4">
                   {/* Class Icon */}
                   <div className="w-16 h-16 bg-stone-panel border-2 border-border-gold rounded flex items-center justify-center text-3xl">
@@ -294,7 +299,7 @@ export function TeamManager() {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
                     <button
                       onClick={() => startEditing(member)}
                       className="pixel-btn text-pixel-xs"

@@ -13,9 +13,10 @@ import type {
   MemberTicket,
 } from '@jira-planner/shared';
 import type { createStorageService } from '../services/storageService.js';
+import type { JiraSyncService } from '../services/jiraSyncService.js';
 import { createJiraService } from '../services/jiraService.js';
 
-export function createJiraRouter(storage: ReturnType<typeof createStorageService>) {
+export function createJiraRouter(storage: ReturnType<typeof createStorageService>, jiraSyncService?: JiraSyncService) {
   const router = Router();
 
   // Get Jira configuration
@@ -531,6 +532,32 @@ export function createJiraRouter(storage: ReturnType<typeof createStorageService
       const response: ApiResponse<never> = {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to fetch member tickets',
+      };
+      res.status(500).json(response);
+    }
+  });
+
+  // Sync active tickets from Jira into local database
+  router.post('/sync-active-tickets', async (req, res) => {
+    try {
+      if (!jiraSyncService) {
+        const response: ApiResponse<never> = {
+          success: false,
+          error: 'Jira sync service not configured',
+        };
+        return res.status(400).json(response);
+      }
+
+      const result = await jiraSyncService.syncActiveTickets();
+      const response: ApiResponse<{ synced: number; errors: string[] }> = {
+        success: true,
+        data: result,
+      };
+      res.json(response);
+    } catch (error) {
+      const response: ApiResponse<never> = {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to sync active tickets',
       };
       res.status(500).json(response);
     }

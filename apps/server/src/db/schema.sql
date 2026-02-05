@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS team_members (
   role TEXT NOT NULL,
   skills TEXT NOT NULL, -- JSON array stored as string
   jira_username TEXT,
+  bitbucket_username TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -229,3 +230,280 @@ CREATE INDEX IF NOT EXISTS idx_member_progress_member ON member_progress(team_me
 CREATE INDEX IF NOT EXISTS idx_ticket_completions_member ON ticket_completions(team_member_id);
 CREATE INDEX IF NOT EXISTS idx_level_up_events_unacked ON level_up_events(acknowledged);
 CREATE INDEX IF NOT EXISTS idx_campaign_regions_epic ON campaign_regions(epic_id);
+
+-- ============================================================================
+-- PM Operating System Tables
+-- ============================================================================
+
+-- PM assignment tracking (when PM assigns tickets via this app)
+CREATE TABLE IF NOT EXISTS pm_assignments (
+  id TEXT PRIMARY KEY,
+  ticket_id TEXT,
+  jira_key TEXT,
+  assignee_id TEXT NOT NULL REFERENCES team_members(id),
+  assigned_by TEXT NOT NULL DEFAULT 'pm',
+  assigned_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT,
+  time_to_completion_hours REAL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Daily activity summary per engineer
+CREATE TABLE IF NOT EXISTS engineer_activity (
+  id TEXT PRIMARY KEY,
+  team_member_id TEXT NOT NULL REFERENCES team_members(id),
+  activity_date TEXT NOT NULL,
+  tickets_assigned INTEGER DEFAULT 0,
+  tickets_completed INTEGER DEFAULT 0,
+  last_activity_at TEXT,
+  UNIQUE(team_member_id, activity_date)
+);
+
+-- PM alerts for underutilization/inactivity
+CREATE TABLE IF NOT EXISTS pm_alerts (
+  id TEXT PRIMARY KEY,
+  team_member_id TEXT NOT NULL REFERENCES team_members(id),
+  alert_type TEXT NOT NULL CHECK (alert_type IN ('no_assignment', 'no_activity')),
+  severity TEXT NOT NULL CHECK (severity IN ('warning', 'critical')),
+  message TEXT NOT NULL,
+  is_dismissed INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- AI ticket suggestions for underutilized engineers
+CREATE TABLE IF NOT EXISTS ai_ticket_suggestions (
+  id TEXT PRIMARY KEY,
+  team_member_id TEXT NOT NULL REFERENCES team_members(id),
+  ticket_id TEXT,
+  jira_key TEXT,
+  title TEXT NOT NULL,
+  reasoning TEXT NOT NULL,
+  skill_match_score REAL NOT NULL,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- PM config singleton (thresholds and settings)
+CREATE TABLE IF NOT EXISTS pm_config (
+  id TEXT PRIMARY KEY DEFAULT 'singleton',
+  underutilization_days INTEGER DEFAULT 2,
+  inactivity_days INTEGER DEFAULT 2,
+  check_interval_hours INTEGER DEFAULT 1,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- PM Tables Indexes
+CREATE INDEX IF NOT EXISTS idx_pm_assignments_assignee ON pm_assignments(assignee_id);
+CREATE INDEX IF NOT EXISTS idx_pm_assignments_completed ON pm_assignments(completed_at);
+CREATE INDEX IF NOT EXISTS idx_engineer_activity_member ON engineer_activity(team_member_id);
+CREATE INDEX IF NOT EXISTS idx_engineer_activity_date ON engineer_activity(activity_date);
+CREATE INDEX IF NOT EXISTS idx_pm_alerts_active ON pm_alerts(is_dismissed);
+CREATE INDEX IF NOT EXISTS idx_pm_alerts_member ON pm_alerts(team_member_id);
+CREATE INDEX IF NOT EXISTS idx_ai_suggestions_pending ON ai_ticket_suggestions(status);
+CREATE INDEX IF NOT EXISTS idx_ai_suggestions_member ON ai_ticket_suggestions(team_member_id);
+
+-- ============================================================================
+-- Ideas Feature Tables (Forge)
+-- ============================================================================
+
+-- Idea sessions - conversation container
+CREATE TABLE IF NOT EXISTS idea_sessions (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  summary TEXT,
+  status TEXT NOT NULL DEFAULT 'brainstorming'
+    CHECK (status IN ('brainstorming', 'prd_generated', 'tickets_created', 'archived')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Conversation messages
+CREATE TABLE IF NOT EXISTS idea_messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES idea_sessions(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Generated PRDs
+CREATE TABLE IF NOT EXISTS idea_prds (
+  id TEXT PRIMARY KEY,
+  session_id TEXT UNIQUE REFERENCES idea_sessions(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  problem_statement TEXT NOT NULL,
+  goals TEXT NOT NULL,                    -- JSON array
+  user_stories TEXT NOT NULL,             -- JSON array
+  functional_requirements TEXT NOT NULL,  -- JSON array
+  non_functional_requirements TEXT NOT NULL,
+  success_metrics TEXT NOT NULL,
+  scope_boundaries TEXT NOT NULL,         -- JSON {inScope: [], outOfScope: []}
+  technical_considerations TEXT,
+  raw_content TEXT NOT NULL,              -- Full markdown
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Ticket proposals (before creation)
+CREATE TABLE IF NOT EXISTS idea_ticket_proposals (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES idea_sessions(id) ON DELETE CASCADE,
+  prd_id TEXT NOT NULL REFERENCES idea_prds(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  acceptance_criteria TEXT NOT NULL,      -- JSON array
+  ticket_type TEXT NOT NULL,
+  priority TEXT NOT NULL,
+  layer TEXT NOT NULL CHECK (layer IN ('frontend', 'backend', 'design', 'fullstack', 'infrastructure', 'data')),
+  required_skills TEXT NOT NULL DEFAULT '[]',
+  suggested_assignee_id TEXT REFERENCES team_members(id),
+  suggested_epic_id TEXT REFERENCES epics(id),
+  assignment_confidence REAL DEFAULT 0,
+  assignment_reasoning TEXT,
+  status TEXT NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed', 'approved', 'rejected', 'created')),
+  created_ticket_id TEXT REFERENCES tickets(id),
+  feature_group_id TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Ideas Tables Indexes
+CREATE INDEX IF NOT EXISTS idx_idea_sessions_status ON idea_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_idea_sessions_updated ON idea_sessions(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_idea_messages_session ON idea_messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_idea_messages_created ON idea_messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_idea_prds_session ON idea_prds(session_id);
+CREATE INDEX IF NOT EXISTS idx_idea_proposals_session ON idea_ticket_proposals(session_id);
+CREATE INDEX IF NOT EXISTS idx_idea_proposals_prd ON idea_ticket_proposals(prd_id);
+CREATE INDEX IF NOT EXISTS idx_idea_proposals_status ON idea_ticket_proposals(status);
+CREATE INDEX IF NOT EXISTS idx_idea_proposals_feature_group ON idea_ticket_proposals(feature_group_id);
+
+-- ============================================================================
+-- Project Context Table (for AI brainstorming context)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS project_context (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  project_name TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  tech_stack TEXT NOT NULL DEFAULT '',
+  architecture TEXT NOT NULL DEFAULT '',
+  product_areas TEXT NOT NULL DEFAULT '',
+  conventions TEXT NOT NULL DEFAULT '',
+  additional_context TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ============================================================================
+-- Bitbucket Integration Tables
+-- ============================================================================
+
+-- Bitbucket Configuration (singleton pattern)
+CREATE TABLE IF NOT EXISTS bitbucket_config (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  workspace TEXT NOT NULL,
+  username TEXT NOT NULL,
+  app_password TEXT NOT NULL,
+  sync_interval INTEGER NOT NULL DEFAULT 300,
+  auto_discover_repos INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Discovered/Tracked Repositories
+CREATE TABLE IF NOT EXISTS bitbucket_repos (
+  slug TEXT PRIMARY KEY,
+  name TEXT,
+  workspace TEXT,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  last_synced_at TEXT,
+  discovered_via TEXT NOT NULL DEFAULT 'auto' CHECK (discovered_via IN ('auto', 'manual'))
+);
+
+-- Pull Requests
+CREATE TABLE IF NOT EXISTS bitbucket_pull_requests (
+  id INTEGER PRIMARY KEY,
+  repo_slug TEXT NOT NULL,
+  pr_number INTEGER NOT NULL,
+  title TEXT,
+  description TEXT,
+  author_username TEXT,
+  author_display_name TEXT,
+  state TEXT NOT NULL CHECK (state IN ('OPEN', 'MERGED', 'DECLINED')),
+  source_branch TEXT,
+  destination_branch TEXT,
+  reviewers TEXT, -- JSON: [{username, displayName, status, approvedAt}]
+  jira_key TEXT,
+  created_at TEXT,
+  updated_at TEXT,
+  merged_at TEXT,
+  team_member_id TEXT REFERENCES team_members(id) ON DELETE SET NULL,
+  UNIQUE(repo_slug, pr_number)
+);
+
+-- Commits
+CREATE TABLE IF NOT EXISTS bitbucket_commits (
+  hash TEXT PRIMARY KEY,
+  repo_slug TEXT NOT NULL,
+  author_username TEXT,
+  author_display_name TEXT,
+  message TEXT,
+  jira_key TEXT,
+  committed_at TEXT,
+  team_member_id TEXT REFERENCES team_members(id) ON DELETE SET NULL
+);
+
+-- Pipeline Runs
+CREATE TABLE IF NOT EXISTS bitbucket_pipelines (
+  uuid TEXT PRIMARY KEY,
+  repo_slug TEXT NOT NULL,
+  build_number INTEGER,
+  state TEXT NOT NULL CHECK (state IN ('PENDING', 'IN_PROGRESS', 'SUCCESSFUL', 'FAILED', 'STOPPED')),
+  result TEXT CHECK (result IN ('successful', 'failed', 'error')),
+  trigger_type TEXT NOT NULL CHECK (trigger_type IN ('push', 'pull_request', 'manual')),
+  branch TEXT,
+  commit_hash TEXT,
+  duration_seconds INTEGER,
+  created_at TEXT,
+  completed_at TEXT
+);
+
+-- Bitbucket XP Awards (extends existing XP system)
+CREATE TABLE IF NOT EXISTS bitbucket_xp_awards (
+  id TEXT PRIMARY KEY,
+  team_member_id TEXT NOT NULL REFERENCES team_members(id) ON DELETE CASCADE,
+  xp_amount INTEGER NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('pr_merged', 'pr_reviewed', 'pr_reviewed_changes', 'commit', 'pipeline_fixed')),
+  reference_id TEXT NOT NULL,
+  repo_slug TEXT,
+  awarded_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(source, reference_id)
+);
+
+-- Bitbucket Sync State (singleton pattern)
+CREATE TABLE IF NOT EXISTS bitbucket_sync_state (
+  id TEXT PRIMARY KEY DEFAULT 'singleton',
+  last_sync_at TEXT,
+  last_successful_sync_at TEXT,
+  sync_interval_ms INTEGER NOT NULL DEFAULT 300000,
+  sync_enabled INTEGER NOT NULL DEFAULT 0,
+  error_count INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Bitbucket Tables Indexes
+CREATE INDEX IF NOT EXISTS idx_bitbucket_prs_repo ON bitbucket_pull_requests(repo_slug);
+CREATE INDEX IF NOT EXISTS idx_bitbucket_prs_state ON bitbucket_pull_requests(state);
+CREATE INDEX IF NOT EXISTS idx_bitbucket_prs_author ON bitbucket_pull_requests(author_username);
+CREATE INDEX IF NOT EXISTS idx_bitbucket_prs_jira ON bitbucket_pull_requests(jira_key);
+CREATE INDEX IF NOT EXISTS idx_bitbucket_prs_member ON bitbucket_pull_requests(team_member_id);
+CREATE INDEX IF NOT EXISTS idx_bitbucket_commits_repo ON bitbucket_commits(repo_slug);
+CREATE INDEX IF NOT EXISTS idx_bitbucket_commits_author ON bitbucket_commits(author_username);
+CREATE INDEX IF NOT EXISTS idx_bitbucket_commits_jira ON bitbucket_commits(jira_key);
+CREATE INDEX IF NOT EXISTS idx_bitbucket_commits_member ON bitbucket_commits(team_member_id);
+CREATE INDEX IF NOT EXISTS idx_bitbucket_pipelines_repo ON bitbucket_pipelines(repo_slug);
+CREATE INDEX IF NOT EXISTS idx_bitbucket_pipelines_state ON bitbucket_pipelines(state);
+CREATE INDEX IF NOT EXISTS idx_bitbucket_xp_member ON bitbucket_xp_awards(team_member_id);
+CREATE INDEX IF NOT EXISTS idx_bitbucket_xp_source ON bitbucket_xp_awards(source);
+CREATE INDEX IF NOT EXISTS idx_bitbucket_repos_active ON bitbucket_repos(is_active);

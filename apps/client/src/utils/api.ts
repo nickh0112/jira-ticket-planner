@@ -35,6 +35,7 @@ import type {
   UpdateJiraSyncConfigInput,
   PMDashboardData,
   EngineerStatus,
+  EngineerDetailData,
   PMAlert,
   PMAssignment,
   AITicketSuggestion,
@@ -42,6 +43,39 @@ import type {
   CreatePMAssignmentInput,
   UpdatePMConfigInput,
   MemberTicket,
+  IdeaSession,
+  IdeaSessionFull,
+  IdeaPRD,
+  IdeaTicketProposal,
+  SendMessageResponse,
+  GeneratePRDResponse,
+  GenerateTicketsResponse,
+  ApproveProposalsResponse,
+  UpdateIdeaSessionInput,
+  UpdateIdeaPRDInput,
+  UpdateTicketProposalInput,
+  IdeasListResponse,
+  ProjectContext,
+  ProjectContextInput,
+  AutomationConfig,
+  AutomationRun,
+  AutomationAction,
+  UpdateAutomationConfigInput,
+  Meeting,
+  MeetingFull,
+  MeetingProcessResult,
+  CreateMeetingInput,
+  MeetingActionItem,
+  MeetingActionItemStatus,
+  Report,
+  GenerateReportInput,
+  SlackConfig,
+  UpdateSlackConfigInput,
+  SlackChannel,
+  SlackInsight,
+  SlackUserMapping,
+  SlackSyncState,
+  SlackTestConnectionResponse,
 } from '@jira-planner/shared';
 
 const API_BASE = '/api';
@@ -525,6 +559,11 @@ export async function getPMEngineerStatus(id: string): Promise<EngineerStatus> {
   return fetchApi<EngineerStatus>(`/pm/engineers/${id}`);
 }
 
+// Get engineer detail data (tickets, activity)
+export async function getPMEngineerDetail(id: string): Promise<EngineerDetailData> {
+  return fetchApi<EngineerDetailData>(`/pm/engineers/${id}/detail`);
+}
+
 // Get active alerts
 export async function getPMAlerts(): Promise<PMAlert[]> {
   return fetchApi<PMAlert[]>('/pm/alerts');
@@ -633,4 +672,491 @@ export async function triggerPMCheck(): Promise<{
 // Get tickets for a specific team member (character screen)
 export async function getMemberTickets(accountId: string): Promise<{ tickets: MemberTicket[] }> {
   return fetchApi<{ tickets: MemberTicket[] }>(`/jira/members/${accountId}/tickets`);
+}
+
+// ============================================================================
+// Ideas API (Forge)
+// ============================================================================
+
+// Get all idea sessions
+export async function getIdeaSessions(status?: string): Promise<IdeasListResponse> {
+  const params = status ? `?status=${status}` : '';
+  return fetchApi<IdeasListResponse>(`/ideas${params}`);
+}
+
+// Create a new idea session
+export async function createIdeaSession(title: string): Promise<IdeaSession> {
+  return fetchApi<IdeaSession>('/ideas', {
+    method: 'POST',
+    body: JSON.stringify({ title }),
+  });
+}
+
+// Get a single session with all data
+export async function getIdeaSession(id: string): Promise<IdeaSessionFull> {
+  return fetchApi<IdeaSessionFull>(`/ideas/${id}`);
+}
+
+// Update a session
+export async function updateIdeaSession(id: string, updates: UpdateIdeaSessionInput): Promise<IdeaSession> {
+  return fetchApi<IdeaSession>(`/ideas/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  });
+}
+
+// Archive a session
+export async function archiveIdeaSession(id: string): Promise<{ archived: true }> {
+  return fetchApi<{ archived: true }>(`/ideas/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+// Send a message and get AI response
+export async function sendIdeaMessage(sessionId: string, content: string): Promise<SendMessageResponse> {
+  return fetchApi<SendMessageResponse>(`/ideas/${sessionId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  });
+}
+
+// Generate PRD from conversation
+export async function generateIdeaPRD(sessionId: string): Promise<GeneratePRDResponse> {
+  return fetchApi<GeneratePRDResponse>(`/ideas/${sessionId}/generate-prd`, {
+    method: 'POST',
+  });
+}
+
+// Update PRD directly
+export async function updateIdeaPRD(sessionId: string, updates: UpdateIdeaPRDInput): Promise<IdeaPRD> {
+  return fetchApi<IdeaPRD>(`/ideas/${sessionId}/prd`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  });
+}
+
+// Generate ticket proposals from PRD
+export async function generateIdeaTickets(sessionId: string): Promise<GenerateTicketsResponse> {
+  return fetchApi<GenerateTicketsResponse>(`/ideas/${sessionId}/generate-tickets`, {
+    method: 'POST',
+  });
+}
+
+// Update a ticket proposal
+export async function updateIdeaProposal(
+  sessionId: string,
+  proposalId: string,
+  updates: UpdateTicketProposalInput
+): Promise<IdeaTicketProposal> {
+  return fetchApi<IdeaTicketProposal>(`/ideas/${sessionId}/proposals/${proposalId}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  });
+}
+
+// Approve selected proposals and create tickets
+export async function approveIdeaProposals(
+  sessionId: string,
+  proposalIds: string[]
+): Promise<ApproveProposalsResponse> {
+  return fetchApi<ApproveProposalsResponse>(`/ideas/${sessionId}/proposals/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ proposalIds }),
+  });
+}
+
+// Reject a proposal
+export async function rejectIdeaProposal(sessionId: string, proposalId: string): Promise<IdeaTicketProposal> {
+  return fetchApi<IdeaTicketProposal>(`/ideas/${sessionId}/proposals/${proposalId}/reject`, {
+    method: 'POST',
+  });
+}
+
+// ============================================================================
+// Settings API
+// ============================================================================
+
+// Get project context
+export async function getProjectContext(): Promise<{ context: ProjectContext | null }> {
+  return fetchApi<{ context: ProjectContext | null }>('/settings/project-context');
+}
+
+// Update project context
+export async function updateProjectContext(context: ProjectContextInput): Promise<{ context: ProjectContext }> {
+  return fetchApi<{ context: ProjectContext }>('/settings/project-context', {
+    method: 'PUT',
+    body: JSON.stringify({ context }),
+  });
+}
+
+// ============================================================================
+// Bitbucket API
+// ============================================================================
+
+import type {
+  BitbucketConfig,
+  CreateBitbucketConfigInput,
+  BitbucketTestConnectionResponse,
+  BitbucketRepo,
+  BitbucketPullRequest,
+  BitbucketCommit,
+  BitbucketPipeline,
+  BitbucketSyncState,
+  UpdateBitbucketSyncConfigInput,
+  BitbucketWorkspaceMember,
+  BitbucketEngineerMetrics,
+  BitbucketLeaderboardEntry,
+  BitbucketActivityItem,
+} from '@jira-planner/shared';
+
+// Get Bitbucket config
+export async function getBitbucketConfig(): Promise<{ config: BitbucketConfig | null }> {
+  const config = await fetchApi<BitbucketConfig | null>('/bitbucket/config');
+  return { config };
+}
+
+// Save Bitbucket config
+export async function saveBitbucketConfig(input: CreateBitbucketConfigInput): Promise<BitbucketConfig> {
+  return fetchApi<BitbucketConfig>('/bitbucket/config', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+// Test Bitbucket connection
+export async function testBitbucketConnection(): Promise<BitbucketTestConnectionResponse> {
+  return fetchApi<BitbucketTestConnectionResponse>('/bitbucket/test', {
+    method: 'POST',
+  });
+}
+
+// Get workspace members for mapping
+export async function getBitbucketWorkspaceMembers(): Promise<BitbucketWorkspaceMember[]> {
+  return fetchApi<BitbucketWorkspaceMember[]>('/bitbucket/workspace-members');
+}
+
+// Map team member to Bitbucket username
+export async function mapTeamMemberToBitbucket(
+  memberId: string,
+  bitbucketUsername: string
+): Promise<TeamMember> {
+  return fetchApi<TeamMember>(`/bitbucket/team/${memberId}/bitbucket`, {
+    method: 'PUT',
+    body: JSON.stringify({ bitbucketUsername }),
+  });
+}
+
+// Get Bitbucket repos
+export async function getBitbucketRepos(activeOnly = false): Promise<BitbucketRepo[]> {
+  const params = activeOnly ? '?active=true' : '';
+  return fetchApi<BitbucketRepo[]>(`/bitbucket/repos${params}`);
+}
+
+// Discover repos from team activity
+export async function discoverBitbucketRepos(): Promise<{ repos: BitbucketRepo[]; discovered: number }> {
+  return fetchApi<{ repos: BitbucketRepo[]; discovered: number }>('/bitbucket/discover', {
+    method: 'POST',
+  });
+}
+
+// Toggle repo tracking
+export async function toggleBitbucketRepo(slug: string, isActive: boolean): Promise<BitbucketRepo> {
+  return fetchApi<BitbucketRepo>(`/bitbucket/repos/${slug}`, {
+    method: 'PUT',
+    body: JSON.stringify({ isActive }),
+  });
+}
+
+// Trigger Bitbucket sync
+export async function triggerBitbucketSync(): Promise<{
+  success: boolean;
+  prsProcessed: number;
+  commitsProcessed: number;
+  pipelinesProcessed: number;
+  xpAwarded: number;
+  error?: string;
+}> {
+  return fetchApi('/bitbucket/sync', {
+    method: 'POST',
+  });
+}
+
+// Get Bitbucket sync status
+export async function getBitbucketSyncStatus(): Promise<{
+  isRunning: boolean;
+  syncState: BitbucketSyncState;
+  hasTimer: boolean;
+}> {
+  return fetchApi('/bitbucket/sync/status');
+}
+
+// Update Bitbucket sync config
+export async function updateBitbucketSyncConfig(input: UpdateBitbucketSyncConfigInput): Promise<BitbucketSyncState> {
+  return fetchApi<BitbucketSyncState>('/bitbucket/sync/config', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+// Get PRs
+export async function getBitbucketPRs(options?: {
+  repo?: string;
+  state?: 'OPEN' | 'MERGED' | 'DECLINED';
+  author?: string;
+  memberId?: string;
+  limit?: number;
+}): Promise<BitbucketPullRequest[]> {
+  const params = new URLSearchParams();
+  if (options?.repo) params.set('repo', options.repo);
+  if (options?.state) params.set('state', options.state);
+  if (options?.author) params.set('author', options.author);
+  if (options?.memberId) params.set('memberId', options.memberId);
+  if (options?.limit) params.set('limit', String(options.limit));
+  const query = params.toString();
+  return fetchApi<BitbucketPullRequest[]>(`/bitbucket/prs${query ? `?${query}` : ''}`);
+}
+
+// Get commits
+export async function getBitbucketCommits(options?: {
+  repo?: string;
+  author?: string;
+  memberId?: string;
+  since?: string;
+  limit?: number;
+}): Promise<BitbucketCommit[]> {
+  const params = new URLSearchParams();
+  if (options?.repo) params.set('repo', options.repo);
+  if (options?.author) params.set('author', options.author);
+  if (options?.memberId) params.set('memberId', options.memberId);
+  if (options?.since) params.set('since', options.since);
+  if (options?.limit) params.set('limit', String(options.limit));
+  const query = params.toString();
+  return fetchApi<BitbucketCommit[]>(`/bitbucket/commits${query ? `?${query}` : ''}`);
+}
+
+// Get pipelines
+export async function getBitbucketPipelines(options?: {
+  repo?: string;
+  state?: string;
+  since?: string;
+  limit?: number;
+}): Promise<BitbucketPipeline[]> {
+  const params = new URLSearchParams();
+  if (options?.repo) params.set('repo', options.repo);
+  if (options?.state) params.set('state', options.state);
+  if (options?.since) params.set('since', options.since);
+  if (options?.limit) params.set('limit', String(options.limit));
+  const query = params.toString();
+  return fetchApi<BitbucketPipeline[]>(`/bitbucket/pipelines${query ? `?${query}` : ''}`);
+}
+
+// Get activity feed
+export async function getBitbucketActivity(limit = 50): Promise<BitbucketActivityItem[]> {
+  return fetchApi<BitbucketActivityItem[]>(`/bitbucket/activity?limit=${limit}`);
+}
+
+// Get engineer metrics
+export async function getBitbucketMetrics(): Promise<BitbucketEngineerMetrics[]> {
+  return fetchApi<BitbucketEngineerMetrics[]>('/bitbucket/metrics');
+}
+
+// Get Bitbucket leaderboard
+export async function getBitbucketLeaderboard(): Promise<BitbucketLeaderboardEntry[]> {
+  return fetchApi<BitbucketLeaderboardEntry[]>('/bitbucket/leaderboard');
+}
+
+// ============================================================================
+// Automation Engine API
+// ============================================================================
+
+// Get automation config
+export async function getAutomationConfig(): Promise<AutomationConfig> {
+  return fetchApi<AutomationConfig>('/automation/config');
+}
+
+// Update automation config
+export async function updateAutomationConfig(input: UpdateAutomationConfigInput): Promise<AutomationConfig> {
+  return fetchApi<AutomationConfig>('/automation/config', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+// Trigger an automation run
+export async function triggerAutomationRun(): Promise<AutomationRun> {
+  return fetchApi<AutomationRun>('/automation/run', {
+    method: 'POST',
+  });
+}
+
+// Get automation run history
+export async function getAutomationRuns(limit = 20): Promise<AutomationRun[]> {
+  return fetchApi<AutomationRun[]>(`/automation/runs?limit=${limit}`);
+}
+
+// Get automation actions with optional filters
+export async function getAutomationActions(filters?: { status?: string; type?: string }): Promise<AutomationAction[]> {
+  const params = new URLSearchParams();
+  if (filters?.status) params.set('status', filters.status);
+  if (filters?.type) params.set('type', filters.type);
+  const query = params.toString();
+  return fetchApi<AutomationAction[]>(`/automation/actions${query ? `?${query}` : ''}`);
+}
+
+// Approve an automation action
+export async function approveAutomationAction(id: string): Promise<AutomationAction> {
+  return fetchApi<AutomationAction>(`/automation/actions/${id}/approve`, {
+    method: 'POST',
+  });
+}
+
+// Reject an automation action
+export async function rejectAutomationAction(id: string): Promise<AutomationAction> {
+  return fetchApi<AutomationAction>(`/automation/actions/${id}/reject`, {
+    method: 'POST',
+  });
+}
+
+// ============================================================================
+// Meetings API
+// ============================================================================
+
+// Process meeting notes with AI
+export async function processMeetingNotes(input: CreateMeetingInput): Promise<MeetingProcessResult> {
+  return fetchApi<MeetingProcessResult>('/meetings/process', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+// Get all meetings
+export async function getMeetings(): Promise<Meeting[]> {
+  return fetchApi<Meeting[]>('/meetings');
+}
+
+// Get a single meeting with full details
+export async function getMeeting(id: string): Promise<MeetingFull> {
+  return fetchApi<MeetingFull>(`/meetings/${id}`);
+}
+
+// Update a meeting action item status
+export async function updateMeetingActionItem(
+  _meetingId: string,
+  actionItemId: string,
+  status: MeetingActionItemStatus
+): Promise<MeetingActionItem> {
+  return fetchApi<MeetingActionItem>(`/meetings/action-items/${actionItemId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ status }),
+  });
+}
+
+// Convert an action item to a ticket
+export async function convertActionItemToTicket(
+  _meetingId: string,
+  actionItemId: string
+): Promise<{ ticketId: string }> {
+  const ticket = await fetchApi<{ id: string }>(`/meetings/action-items/${actionItemId}/convert-to-ticket`, {
+    method: 'POST',
+  });
+  return { ticketId: ticket.id };
+}
+
+// ============================================================================
+// Reports API
+// ============================================================================
+
+// Get all reports
+export async function getReports(): Promise<Report[]> {
+  return fetchApi<Report[]>('/reports');
+}
+
+// Get a single report
+export async function getReport(id: string): Promise<Report> {
+  return fetchApi<Report>(`/reports/${id}`);
+}
+
+// Generate a new report
+export async function generateReport(input: GenerateReportInput): Promise<Report> {
+  return fetchApi<Report>('/reports/generate', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+// Delete a report
+export async function deleteReport(id: string): Promise<void> {
+  await fetchApi<{ deleted: true }>(`/reports/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+// ============================================================================
+// Slack API
+// ============================================================================
+
+// Get Slack config
+export async function getSlackConfig(): Promise<{ config: SlackConfig | null }> {
+  return fetchApi<{ config: SlackConfig | null }>('/slack/config');
+}
+
+// Update Slack config
+export async function updateSlackConfig(input: UpdateSlackConfigInput): Promise<SlackConfig> {
+  return fetchApi<SlackConfig>('/slack/config', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+// Test Slack connection
+export async function testSlackConnection(): Promise<SlackTestConnectionResponse> {
+  return fetchApi<SlackTestConnectionResponse>('/slack/test', {
+    method: 'POST',
+  });
+}
+
+// Get Slack channels
+export async function getSlackChannels(): Promise<SlackChannel[]> {
+  return fetchApi<SlackChannel[]>('/slack/channels');
+}
+
+// Toggle channel monitoring
+export async function toggleSlackChannel(channelId: string, isMonitored: boolean): Promise<SlackChannel> {
+  return fetchApi<SlackChannel>(`/slack/channels/${channelId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ isMonitored }),
+  });
+}
+
+// Get Slack insights
+export async function getSlackInsights(limit = 50): Promise<SlackInsight[]> {
+  return fetchApi<SlackInsight[]>(`/slack/insights?limit=${limit}`);
+}
+
+// Trigger Slack sync
+export async function triggerSlackSync(): Promise<SlackSyncState> {
+  return fetchApi<SlackSyncState>('/slack/sync', {
+    method: 'POST',
+  });
+}
+
+// Get Slack sync status
+export async function getSlackSyncStatus(): Promise<SlackSyncState> {
+  return fetchApi<SlackSyncState>('/slack/sync/status');
+}
+
+// Get Slack user mappings
+export async function getSlackUserMappings(): Promise<SlackUserMapping[]> {
+  return fetchApi<SlackUserMapping[]>('/slack/user-mappings');
+}
+
+// Update Slack user mapping
+export async function updateSlackUserMapping(
+  slackUserId: string,
+  teamMemberId: string | null
+): Promise<SlackUserMapping> {
+  return fetchApi<SlackUserMapping>(`/slack/user-mappings/${slackUserId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ teamMemberId }),
+  });
 }

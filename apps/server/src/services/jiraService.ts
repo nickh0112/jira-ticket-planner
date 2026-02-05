@@ -652,6 +652,22 @@ export class JiraService {
     return this.getRecentTickets(config, { jql, maxResults });
   }
 
+  /**
+   * Fetch active (non-completed) tickets from Jira
+   * Used to sync ticket assignments for PM Dashboard
+   */
+  async getActiveTickets(config: JiraConfig): Promise<JiraTicketForLearning[]> {
+    // Build JQL with team filter if configured
+    // Exclude tickets not updated in 90+ days to filter out stale/hung tickets
+    let jql: string;
+    if (config.teamValue) {
+      jql = `project = ${config.projectKey} AND cf[10104] = "${config.teamValue}" AND status NOT IN (Done, Closed, Resolved) AND updated >= -90d ORDER BY updated DESC`;
+    } else {
+      jql = `project = ${config.projectKey} AND status NOT IN (Done, Closed, Resolved) AND updated >= -90d ORDER BY updated DESC`;
+    }
+    return this.getRecentTickets(config, { jql });
+  }
+
   private mapJiraIssueToLearningTicket(issue: any, config: JiraConfig): JiraTicketForLearning {
     const fields = issue.fields;
 

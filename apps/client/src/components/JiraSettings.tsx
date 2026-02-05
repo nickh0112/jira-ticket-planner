@@ -7,8 +7,10 @@ import {
   syncJiraData,
   getEpics,
   getTeamMembers,
+  getProjectContext,
+  updateProjectContext,
 } from '../utils/api';
-import type { JiraSyncResult } from '@jira-planner/shared';
+import type { JiraSyncResult, ProjectContextInput } from '@jira-planner/shared';
 
 interface JiraFormData {
   baseUrl: string;
@@ -34,14 +36,36 @@ const emptyForm: JiraFormData = {
   teamValue: '',
 };
 
+interface ProjectContextFormData {
+  projectName: string;
+  description: string;
+  techStack: string;
+  architecture: string;
+  productAreas: string;
+  conventions: string;
+  additionalContext: string;
+}
+
+const emptyProjectContext: ProjectContextFormData = {
+  projectName: '',
+  description: '',
+  techStack: '',
+  architecture: '',
+  productAreas: '',
+  conventions: '',
+  additionalContext: '',
+};
+
 export function JiraSettings() {
   const { showToast, setEpics, setTeamMembers } = useStore();
 
   const [formData, setFormData] = useState<JiraFormData>(emptyForm);
+  const [projectContextData, setProjectContextData] = useState<ProjectContextFormData>(emptyProjectContext);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSavingContext, setIsSavingContext] = useState(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
     message: string;
@@ -50,6 +74,7 @@ export function JiraSettings() {
 
   useEffect(() => {
     loadConfig();
+    loadProjectContext();
   }, []);
 
   const loadConfig = async () => {
@@ -73,6 +98,47 @@ export function JiraSettings() {
       showToast('Failed to load Jira configuration', 'error');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadProjectContext = async () => {
+    try {
+      const { context } = await getProjectContext();
+      if (context) {
+        setProjectContextData({
+          projectName: context.projectName || '',
+          description: context.description || '',
+          techStack: context.techStack || '',
+          architecture: context.architecture || '',
+          productAreas: context.productAreas || '',
+          conventions: context.conventions || '',
+          additionalContext: context.additionalContext || '',
+        });
+      }
+    } catch (error) {
+      // Silently fail - project context is optional
+      console.error('Failed to load project context:', error);
+    }
+  };
+
+  const handleSaveProjectContext = async () => {
+    setIsSavingContext(true);
+    try {
+      const input: ProjectContextInput = {
+        projectName: projectContextData.projectName,
+        description: projectContextData.description,
+        techStack: projectContextData.techStack,
+        architecture: projectContextData.architecture,
+        productAreas: projectContextData.productAreas,
+        conventions: projectContextData.conventions,
+        additionalContext: projectContextData.additionalContext,
+      };
+      await updateProjectContext(input);
+      showToast('Project context saved!', 'success');
+    } catch (error) {
+      showToast('Failed to save project context', 'error');
+    } finally {
+      setIsSavingContext(false);
     }
   };
 
@@ -459,6 +525,130 @@ export function JiraSettings() {
         </div>
       </div>
 
+      {/* Project Context Section */}
+      <div className="panel p-6 space-y-6">
+        <div className="flex items-center gap-3">
+          <span className="text-xl">brain</span>
+          <h3 className="font-pixel text-pixel-xs text-gold">PROJECT CONTEXT (FOR AI)</h3>
+        </div>
+        <div className="pixel-divider" />
+
+        <p className="font-readable text-base text-beige/70">
+          Provide context about your project to help the Forge AI generate more relevant and tailored ideas, tickets, and PRDs.
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block font-pixel text-pixel-xs text-beige/70 mb-2">
+              Project Name
+            </label>
+            <input
+              type="text"
+              value={projectContextData.projectName}
+              onChange={(e) =>
+                setProjectContextData((prev) => ({ ...prev, projectName: e.target.value }))
+              }
+              className="pixel-input w-full max-w-[400px]"
+              placeholder="Foam"
+            />
+          </div>
+
+          <div>
+            <label className="block font-pixel text-pixel-xs text-beige/70 mb-2">
+              Description
+            </label>
+            <textarea
+              value={projectContextData.description}
+              onChange={(e) =>
+                setProjectContextData((prev) => ({ ...prev, description: e.target.value }))
+              }
+              className="pixel-input w-full min-h-[80px]"
+              placeholder="What does your product do? Who are your target users? What problems does it solve?"
+            />
+          </div>
+
+          <div>
+            <label className="block font-pixel text-pixel-xs text-beige/70 mb-2">
+              Tech Stack
+            </label>
+            <textarea
+              value={projectContextData.techStack}
+              onChange={(e) =>
+                setProjectContextData((prev) => ({ ...prev, techStack: e.target.value }))
+              }
+              className="pixel-input w-full min-h-[60px]"
+              placeholder="React, TypeScript, Node.js, PostgreSQL, Redis, AWS..."
+            />
+          </div>
+
+          <div>
+            <label className="block font-pixel text-pixel-xs text-beige/70 mb-2">
+              Architecture
+            </label>
+            <textarea
+              value={projectContextData.architecture}
+              onChange={(e) =>
+                setProjectContextData((prev) => ({ ...prev, architecture: e.target.value }))
+              }
+              className="pixel-input w-full min-h-[60px]"
+              placeholder="Monorepo structure, microservices, key patterns used..."
+            />
+          </div>
+
+          <div>
+            <label className="block font-pixel text-pixel-xs text-beige/70 mb-2">
+              Product Areas / Features
+            </label>
+            <textarea
+              value={projectContextData.productAreas}
+              onChange={(e) =>
+                setProjectContextData((prev) => ({ ...prev, productAreas: e.target.value }))
+              }
+              className="pixel-input w-full min-h-[60px]"
+              placeholder="Key features, modules, or product areas (e.g., Authentication, Dashboard, Reporting...)"
+            />
+          </div>
+
+          <div>
+            <label className="block font-pixel text-pixel-xs text-beige/70 mb-2">
+              Conventions
+            </label>
+            <textarea
+              value={projectContextData.conventions}
+              onChange={(e) =>
+                setProjectContextData((prev) => ({ ...prev, conventions: e.target.value }))
+              }
+              className="pixel-input w-full min-h-[60px]"
+              placeholder="Naming patterns, coding standards, ticket conventions..."
+            />
+          </div>
+
+          <div>
+            <label className="block font-pixel text-pixel-xs text-beige/70 mb-2">
+              Additional Context
+            </label>
+            <textarea
+              value={projectContextData.additionalContext}
+              onChange={(e) =>
+                setProjectContextData((prev) => ({ ...prev, additionalContext: e.target.value }))
+              }
+              className="pixel-input w-full min-h-[80px]"
+              placeholder="Domain knowledge, business rules, important constraints, anything else relevant..."
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={handleSaveProjectContext}
+            disabled={isSavingContext}
+            className="pixel-btn pixel-btn-primary text-pixel-xs disabled:opacity-50"
+          >
+            {isSavingContext ? 'Saving...' : 'Save Project Context'}
+          </button>
+        </div>
+      </div>
+
       {/* Help Section */}
       <div className="panel p-6 space-y-4">
         <h3 className="font-pixel text-pixel-xs text-gold">HOW IT WORKS</h3>
@@ -474,7 +664,10 @@ export function JiraSettings() {
             <strong>3.</strong> Test the connection to verify everything is working
           </p>
           <p>
-            <strong>4.</strong> Approve quests in the Quests tab, then click "Complete" to create them in Jira
+            <strong>4.</strong> Fill in the Project Context to help Forge generate better ideas
+          </p>
+          <p>
+            <strong>5.</strong> Approve quests in the Quests tab, then click "Complete" to create them in Jira
           </p>
         </div>
       </div>
