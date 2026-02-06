@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { callClaudeWithRetry } from './claudeService.js';
 import type { StorageService } from './storageService.js';
+import type { JiraService } from './jiraService.js';
 import type {
   MeetingType,
   MeetingProcessResult,
@@ -21,9 +22,11 @@ interface ProcessMeetingContext {
 
 export class MeetingService {
   private storage: StorageService;
+  private jiraService: JiraService | null;
 
-  constructor(storage: StorageService) {
+  constructor(storage: StorageService, jiraService?: JiraService | null) {
     this.storage = storage;
+    this.jiraService = jiraService ?? null;
   }
 
   async processMeetingNotes(
@@ -178,8 +181,53 @@ Rules:
       ticketSuggestions,
     };
   }
+
+  async createTicketFromActionItemInJira(actionItemId: string): Promise<{ ticket: any; jiraKey?: string }> {
+    const actionItems = this.storage.getMeetingActionItems({});
+    const actionItem = actionItems.find(ai => ai.id === actionItemId);
+    if (!actionItem) throw new Error('Action item not found');
+
+    // Create local ticket if it doesn't already exist
+    let ticket;
+    if (actionItem.jiraTicketId) {
+      ticket = this.storage.getTicket(actionItem.jiraTicketId);
+    }
+    if (!ticket) {
+      ticket = this.storage.createTicket({
+        title: actionItem.action,
+        description: `Created from meeting action item.\n\nAction: ${actionItem.action}`,
+        acceptanceCriteria: ['Complete the action item as described'],
+        ticketType: 'task',
+        priority: 'medium',
+        assigneeId: actionItem.assigneeId ?? undefined,
+      });
+      this.storage.updateMeetingActionItem(actionItemId, { jiraTicketId: ticket.id });
+    }
+
+    // Push to Jira
+    if (!this.jiraService) throw new Error('Jira service not configured');
+    const jiraConfig = this.storage.getJiraConfig();
+    if (!jiraConfig) throw new Error('Jira configuration not set');
+
+    if (ticket.jiraKey) {
+      return { ticket, jiraKey: ticket.jiraKey };
+    }
+
+    const teamMembers = this.storage.getTeamMembers();
+    const epics = this.storage.getEpics();
+    const jiraResponse = await this.jiraService.createIssue(jiraConfig, ticket, { teamMembers, epics });
+    const jiraUrl = `${jiraConfig.baseUrl}/browse/${jiraResponse.key}`;
+    const updatedTicket = this.storage.updateTicket(ticket.id, {
+      status: 'created',
+      createdInJira: true,
+      jiraKey: jiraResponse.key,
+      jiraUrl,
+    });
+
+    return { ticket: updatedTicket, jiraKey: jiraResponse.key };
+  }
 }
 
-export const createMeetingService = (storage: StorageService): MeetingService => {
-  return new MeetingService(storage);
+export const createMeetingService = (storage: StorageService, jiraService?: JiraService | null): MeetingService => {
+  return new MeetingService(storage, jiraService);
 };

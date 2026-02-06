@@ -276,5 +276,27 @@ export function createAgentRouter(agentService: AgentService) {
     }
   });
 
+  /**
+   * POST /api/agent/tickets/:id/sync-to-jira
+   * Sync ticket enhancements to Jira
+   */
+  router.post('/tickets/:id/sync-to-jira', async (req, res) => {
+    try {
+      const result = await agentService.syncEnhancementsToJira(req.params.id);
+      const response: ApiResponse<typeof result> = {
+        success: true,
+        data: result,
+      };
+      res.json(response);
+    } catch (error) {
+      console.error('Sync to Jira error:', error);
+      const response: ApiResponse<never> = {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to sync to Jira',
+      };
+      res.status(500).json(response);
+    }
+  });
+
   return router;
 }

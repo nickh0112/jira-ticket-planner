@@ -4499,6 +4499,48 @@ class StorageService {
     };
   }
 
+  // Jira sync failure methods
+  createSyncFailure(input: { id: string; entityType: string; entityId: string; jiraKey?: string; errorMessage: string }): any {
+    this.db.prepare(`
+      INSERT INTO jira_sync_failures (id, entity_type, entity_id, jira_key, error_message)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(input.id, input.entityType, input.entityId, input.jiraKey ?? null, input.errorMessage);
+    return this.db.prepare('SELECT * FROM jira_sync_failures WHERE id = ?').get(input.id);
+  }
+
+  getSyncFailures(options?: { resolved?: boolean; entityType?: string }): any[] {
+    let query = 'SELECT * FROM jira_sync_failures WHERE 1=1';
+    const params: any[] = [];
+
+    if (options?.resolved !== undefined) {
+      query += ' AND resolved = ?';
+      params.push(options.resolved ? 1 : 0);
+    }
+    if (options?.entityType) {
+      query += ' AND entity_type = ?';
+      params.push(options.entityType);
+    }
+
+    query += ' ORDER BY created_at DESC';
+
+    return this.db.prepare(query).all(...params) as any[];
+  }
+
+  resolveSyncFailure(id: string): void {
+    const stmt = this.db.prepare('UPDATE jira_sync_failures SET resolved = 1 WHERE id = ?');
+    stmt.run(id);
+  }
+
+  incrementSyncFailureRetry(id: string): void {
+    const stmt = this.db.prepare('UPDATE jira_sync_failures SET retry_count = retry_count + 1 WHERE id = ?');
+    stmt.run(id);
+  }
+
+  updateTicketJiraSyncedAt(ticketId: string): void {
+    const stmt = this.db.prepare("UPDATE tickets SET jira_synced_at = datetime('now') WHERE id = ?");
+    stmt.run(ticketId);
+  }
+
   close() {
     this.db.close();
   }

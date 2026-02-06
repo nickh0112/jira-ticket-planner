@@ -6,7 +6,7 @@ import { CopyButton } from './CopyButton';
 import { SprintSelectModal } from './SprintSelectModal';
 import { SkillBadge } from './SkillBadge';
 import { formatTicketForJira } from '../utils/formatTicket';
-import { updateTicketStatus, updateTicket, createJiraIssue } from '../utils/api';
+import { updateTicketStatus, updateTicket, createJiraIssue, syncTicketToJira } from '../utils/api';
 
 interface TicketCardProps {
   ticket: Ticket;
@@ -64,6 +64,7 @@ export function TicketCard({ ticket }: TicketCardProps) {
 
   const { addXp, incrementQuestsCompleted } = useProgressStore();
   const [isCreatingInJira, setIsCreatingInJira] = useState(false);
+  const [isSyncingToJira, setIsSyncingToJira] = useState(false);
   const [showSprintModal, setShowSprintModal] = useState(false);
   const [clickEvent, setClickEvent] = useState<{ x: number; y: number } | null>(null);
 
@@ -146,6 +147,20 @@ export function TicketCard({ ticket }: TicketCardProps) {
     setShowSprintModal(false);
     setClickEvent(null);
   };
+
+  const handleSyncToJira = async () => {
+    setIsSyncingToJira(true);
+    try {
+      await syncTicketToJira(ticket.id);
+      showToast('Synced enhancements to Jira', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to sync to Jira', 'error');
+    } finally {
+      setIsSyncingToJira(false);
+    }
+  };
+
+  const hasEnhancements = !!(ticket as any).enhancements;
 
   return (
     <div
@@ -301,6 +316,17 @@ export function TicketCard({ ticket }: TicketCardProps) {
               </span>
             )}
           </div>
+        )}
+
+        {ticket.jiraKey && hasEnhancements && (
+          <button
+            onClick={handleSyncToJira}
+            disabled={isSyncingToJira}
+            className="pixel-btn text-pixel-xs disabled:opacity-50"
+            title="Sync enhancements to Jira"
+          >
+            {isSyncingToJira ? '⏳' : '🔄'} Sync
+          </button>
         )}
 
         <CopyButton

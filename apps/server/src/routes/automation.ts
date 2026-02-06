@@ -9,10 +9,12 @@ import type {
 } from '@jira-planner/shared';
 import type { StorageService } from '../services/storageService.js';
 import type { AutomationEngine } from '../services/automationEngine.js';
+import type { ActionExecutor } from '../services/automation/actionExecutor.js';
 
 export function createAutomationRouter(
   storage: StorageService,
-  automationEngine: AutomationEngine
+  automationEngine: AutomationEngine,
+  actionExecutor?: ActionExecutor
 ): Router {
   const router = Router();
 
@@ -98,13 +100,26 @@ export function createAutomationRouter(
   });
 
   // POST /actions/:id/approve - approve an action
-  router.post('/actions/:id/approve', (req: Request, res: Response) => {
+  router.post('/actions/:id/approve', async (req: Request, res: Response) => {
     try {
       const action = storage.updateAutomationActionStatus(req.params.id, 'approved', 'user');
       if (!action) {
         return res.status(404).json({ success: false, error: 'Action not found' });
       }
-      const response: ApiResponse<AutomationAction> = { success: true, data: action };
+
+      // Execute the action in Jira
+      let executionResult;
+      if (actionExecutor) {
+        executionResult = await actionExecutor.execute(action);
+        if (executionResult.success) {
+          storage.updateAutomationActionStatus(action.id, 'executed', 'user');
+        }
+      }
+
+      const response: ApiResponse<AutomationAction & { executionResult?: any }> = {
+        success: true,
+        data: { ...action, status: executionResult?.success ? 'executed' as any : action.status, executionResult },
+      };
       res.json(response);
     } catch (error) {
       res.status(500).json({

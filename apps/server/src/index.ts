@@ -13,6 +13,7 @@ import { createPMService } from './services/pmService.js';
 import { createBitbucketService } from './services/bitbucketService.js';
 import { createBitbucketSyncService } from './services/bitbucketSyncService.js';
 import { createAutomationEngine } from './services/automationEngine.js';
+import { ActionExecutor } from './services/automation/actionExecutor.js';
 import { PMCheckModule } from './services/automation/pmCheck.js';
 import { StaleTicketCheckModule } from './services/automation/staleTicketCheck.js';
 import { AccountabilityCheckModule } from './services/automation/accountabilityCheck.js';
@@ -43,8 +44,10 @@ import { AppError } from '@jira-planner/shared';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load .env from project root
-dotenv.config({ path: join(__dirname, '../../../.env') });
+// Load .env from project root (skip in production — env vars are injected by Railway)
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config({ path: join(__dirname, '../../../.env') });
+}
 
 const PORT = Number(process.env.PORT) || 8005;
 const DATABASE_PATH = process.env.DATABASE_PATH || join(__dirname, '../../../data/database.sqlite');
@@ -67,10 +70,10 @@ const syncService = createJiraSyncService({ storage, jiraService });
 const pmService = createPMService({ storage, agentService, jiraService });
 
 // Initialize Ideas service
-const ideasService = createIdeasService({ storage, agentService });
+const ideasService = createIdeasService({ storage, agentService, jiraService });
 
 // Initialize Meeting service
-const meetingService = createMeetingService(storage);
+const meetingService = createMeetingService(storage, jiraService);
 
 // Initialize Bitbucket services
 // Bitbucket service is created on-demand since config is stored in DB
@@ -100,8 +103,11 @@ const slackSyncService = createSlackSyncService({
   getSlackService,
 });
 
+// Initialize ActionExecutor for Jira write-back
+const actionExecutor = new ActionExecutor({ storage, jiraService });
+
 // Initialize Automation Engine (replaces pmBackgroundService)
-const automationEngine = createAutomationEngine({ storage });
+const automationEngine = createAutomationEngine({ storage, executor: actionExecutor });
 automationEngine.registerCheck(new PMCheckModule(pmService));
 automationEngine.registerCheck(new StaleTicketCheckModule());
 automationEngine.registerCheck(new AccountabilityCheckModule());
@@ -129,10 +135,20 @@ app.use('/api/pm', createPMRouter(storage, pmService, automationEngine));
 app.use('/api/ideas', createIdeasRouter(ideasService));
 app.use('/api/settings', createSettingsRouter(storage));
 app.use('/api/bitbucket', createBitbucketRouter(storage, getBitbucketService, bitbucketSyncService));
-app.use('/api/automation', createAutomationRouter(storage, automationEngine));
+app.use('/api/automation', createAutomationRouter(storage, automationEngine, actionExecutor));
 app.use('/api/meetings', createMeetingsRouter(storage, meetingService));
 app.use('/api/reports', createReportsRouter(storage));
 app.use('/api/slack', createSlackRouter(storage, getSlackService, slackSyncService));
+
+// Serve client static files in production
+if (process.env.NODE_ENV === 'production') {
+  const clientDistPath = join(__dirname, '../../client/dist');
+  app.use(express.static(clientDistPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(join(clientDistPath, 'index.html'));
+  });
+}
 
 // Health check
 app.get('/api/health', (req, res) => {

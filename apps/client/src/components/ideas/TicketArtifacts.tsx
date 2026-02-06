@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { IdeaTicketProposal } from '@jira-planner/shared';
 import { useIdeasStore } from '../../store/ideasStore';
 import { TicketCard } from './TicketCard';
@@ -15,6 +16,8 @@ export function TicketArtifacts({ proposals }: TicketArtifactsProps) {
     approveProposals,
   } = useIdeasStore();
 
+  const [pushToJira, setPushToJira] = useState(false);
+
   const proposedProposals = proposals.filter(p => p.status === 'proposed');
   const otherProposals = proposals.filter(p => p.status !== 'proposed');
 
@@ -22,7 +25,7 @@ export function TicketArtifacts({ proposals }: TicketArtifactsProps) {
   const allSelected = selectedCount === proposedProposals.length && proposedProposals.length > 0;
 
   const handleApprove = async () => {
-    await approveProposals();
+    await approveProposals({ pushToJira });
   };
 
   return (
@@ -43,17 +46,28 @@ export function TicketArtifacts({ proposals }: TicketArtifactsProps) {
               </span>
             </label>
           </div>
-          <button
-            onClick={handleApprove}
-            disabled={selectedCount === 0 || isGenerating}
-            className="stone-button stone-button-primary text-sm px-4 py-1.5 disabled:opacity-50"
-          >
-            {isGenerating ? (
-              <span className="animate-pulse">Creating...</span>
-            ) : (
-              <>Create {selectedCount} Quest{selectedCount !== 1 ? 's' : ''}</>
-            )}
-          </button>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={pushToJira}
+                onChange={() => setPushToJira(!pushToJira)}
+                className="w-4 h-4 rounded border-stone-500 bg-stone-700 text-gold focus:ring-gold"
+              />
+              <span className="text-sm text-beige/70">Push to Jira</span>
+            </label>
+            <button
+              onClick={handleApprove}
+              disabled={selectedCount === 0 || isGenerating}
+              className="stone-button stone-button-primary text-sm px-4 py-1.5 disabled:opacity-50"
+            >
+              {isGenerating ? (
+                <span className="animate-pulse">Creating...</span>
+              ) : (
+                <>Create {selectedCount} Quest{selectedCount !== 1 ? 's' : ''}{pushToJira ? ' + Jira' : ''}</>
+              )}
+            </button>
+          </div>
         </div>
       )}
 

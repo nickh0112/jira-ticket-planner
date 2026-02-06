@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMeetingsStore, type MeetingView } from '../store/meetingsStore';
+import { createActionItemInJira } from '../utils/api';
 import type { MeetingType, MeetingActionItemStatus } from '@jira-planner/shared';
 
 const MEETING_TYPES: { value: MeetingType; label: string }[] = [
@@ -48,6 +49,20 @@ function MeetingTypeBadge({ type }: { type: MeetingType }) {
 
 function MeetingResults({ meeting }: { meeting: MeetingView }) {
   const { updateActionItem, convertToTicket } = useMeetingsStore();
+  const [creatingInJira, setCreatingInJira] = useState<string | null>(null);
+  const [jiraError, setJiraError] = useState<{ itemId: string; message: string } | null>(null);
+
+  const handleCreateInJira = async (actionItemId: string) => {
+    setCreatingInJira(actionItemId);
+    setJiraError(null);
+    try {
+      await createActionItemInJira(actionItemId);
+    } catch (error) {
+      setJiraError({ itemId: actionItemId, message: error instanceof Error ? error.message : 'Failed to create in Jira' });
+    } finally {
+      setCreatingInJira(null);
+    }
+  };
 
   const handleStatusCycle = (actionItemId: string, currentStatus: MeetingActionItemStatus) => {
     const idx = STATUS_CYCLE.indexOf(currentStatus);
@@ -148,12 +163,26 @@ function MeetingResults({ meeting }: { meeting: MeetingView }) {
                       Ticket Created
                     </span>
                   ) : (
-                    <button
-                      onClick={() => convertToTicket(meeting.id, item.id)}
-                      className="px-2 py-1 bg-blue-900/40 text-blue-400 rounded text-xs font-pixel hover:bg-blue-900/60 transition-colors border border-blue-700/40"
-                    >
-                      Create Ticket
-                    </button>
+                    <>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => convertToTicket(meeting.id, item.id)}
+                          className="px-2 py-1 bg-blue-900/40 text-blue-400 rounded text-xs font-pixel hover:bg-blue-900/60 transition-colors border border-blue-700/40"
+                        >
+                          Create Ticket
+                        </button>
+                        <button
+                          onClick={() => handleCreateInJira(item.id)}
+                          disabled={creatingInJira === item.id}
+                          className="px-2 py-1 bg-purple-900/40 text-purple-400 rounded text-xs font-pixel hover:bg-purple-900/60 transition-colors border border-purple-700/40 disabled:opacity-50"
+                        >
+                          {creatingInJira === item.id ? '...' : 'Create in Jira'}
+                        </button>
+                      </div>
+                      {jiraError?.itemId === item.id && (
+                        <p className="text-xs text-red-400 mt-1">{jiraError.message}</p>
+                      )}
+                    </>
                   )}
                 </div>
               );

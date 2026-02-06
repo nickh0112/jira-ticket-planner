@@ -356,6 +356,89 @@ export class AgentService {
   rejectEpicProposal(proposalId: string): void {
     this.storage.updatePendingEpicProposal(proposalId, { status: 'rejected' });
   }
+
+  /**
+   * Sync ticket enhancements to Jira (update Jira issue description with enhanced content)
+   */
+  async syncEnhancementsToJira(ticketId: string): Promise<{ success: boolean; jiraKey?: string }> {
+    const ticket = this.storage.getTicket(ticketId);
+    if (!ticket) throw new Error('Ticket not found');
+    if (!ticket.jiraKey) throw new Error('Ticket has no Jira key');
+    if (!this.jiraService) throw new Error('Jira service not configured');
+
+    const jiraConfig = this.storage.getJiraConfig();
+    if (!jiraConfig) throw new Error('Jira configuration not set');
+
+    const enhancements = this.storage.getTicketEnhancements(ticketId);
+    if (!enhancements) throw new Error('No enhancements found for this ticket');
+
+    // Build ADF description with enhanced content
+    const content: any[] = [];
+
+    // Main description
+    content.push({
+      type: 'paragraph',
+      content: [{ type: 'text', text: ticket.description }],
+    });
+
+    // Technical context
+    if (enhancements.technicalContext) {
+      content.push({
+        type: 'heading',
+        attrs: { level: 3 },
+        content: [{ type: 'text', text: 'Technical Context' }],
+      });
+      content.push({
+        type: 'paragraph',
+        content: [{ type: 'text', text: enhancements.technicalContext }],
+      });
+    }
+
+    // AI Coding Notes
+    if (enhancements.aiCodingNotes) {
+      content.push({
+        type: 'heading',
+        attrs: { level: 3 },
+        content: [{ type: 'text', text: 'Implementation Notes' }],
+      });
+      content.push({
+        type: 'paragraph',
+        content: [{ type: 'text', text: enhancements.aiCodingNotes }],
+      });
+    }
+
+    // Acceptance criteria
+    if (ticket.acceptanceCriteria.length > 0) {
+      content.push({
+        type: 'heading',
+        attrs: { level: 3 },
+        content: [{ type: 'text', text: 'Acceptance Criteria' }],
+      });
+      content.push({
+        type: 'orderedList',
+        content: ticket.acceptanceCriteria.map(criterion => ({
+          type: 'listItem',
+          content: [{
+            type: 'paragraph',
+            content: [{ type: 'text', text: criterion }],
+          }],
+        })),
+      });
+    }
+
+    const adfDescription = {
+      type: 'doc',
+      version: 1,
+      content,
+    };
+
+    await this.jiraService.updateIssue(jiraConfig, ticket.jiraKey, {
+      description: adfDescription,
+    });
+
+    this.storage.updateTicketJiraSyncedAt(ticketId);
+    return { success: true, jiraKey: ticket.jiraKey };
+  }
 }
 
 export const createAgentService = (context: AgentContext): AgentService => {

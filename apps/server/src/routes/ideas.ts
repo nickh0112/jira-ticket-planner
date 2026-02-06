@@ -185,12 +185,12 @@ export function createIdeasRouter(ideasService: IdeasService): Router {
   // POST /api/ideas/:id/proposals/approve - Approve selected proposals & create tickets
   router.post('/:id/proposals/approve', async (req, res) => {
     try {
-      const { proposalIds } = req.body;
+      const { proposalIds, pushToJira } = req.body;
       if (!Array.isArray(proposalIds) || proposalIds.length === 0) {
         return res.status(400).json({ success: false, error: 'proposalIds array is required' });
       }
 
-      const result = await ideasService.approveProposals(req.params.id, proposalIds);
+      const result = await ideasService.approveProposals(req.params.id, proposalIds, { pushToJira });
       const response: ApiResponse<typeof result> = { success: true, data: result };
       res.json(response);
     } catch (error: any) {

@@ -42,7 +42,7 @@ interface IdeasState {
   sendMessage: (content: string) => Promise<void>;
   generatePRD: () => Promise<void>;
   generateTickets: () => Promise<void>;
-  approveProposals: () => Promise<void>;
+  approveProposals: (options?: { pushToJira?: boolean }) => Promise<void>;
   rejectProposal: (proposalId: string) => Promise<void>;
   updateProposal: (proposalId: string, updates: UpdateTicketProposalInput) => Promise<void>;
 
@@ -238,7 +238,7 @@ export const useIdeasStore = create<IdeasState>((set, get) => ({
   },
 
   // Approve selected proposals
-  approveProposals: async () => {
+  approveProposals: async (options) => {
     const { currentSession, selectedProposalIds } = get();
     if (!currentSession || selectedProposalIds.size === 0) return;
 
@@ -246,7 +246,8 @@ export const useIdeasStore = create<IdeasState>((set, get) => ({
     try {
       await apiApproveProposals(
         currentSession.session.id,
-        Array.from(selectedProposalIds)
+        Array.from(selectedProposalIds),
+        options
       );
 
       // Reload session to get updated proposals

@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { AutomationRun, AutomationAction } from '@jira-planner/shared';
 import type { StorageService } from './storageService.js';
 import type { CheckModule, ProposedAction } from './automation/types.js';
+import type { ActionExecutor } from './automation/actionExecutor.js';
 
 export interface AutomationEvent {
   type: string;
@@ -12,10 +13,12 @@ export interface AutomationEvent {
 
 interface AutomationEngineConfig {
   storage: StorageService;
+  executor?: ActionExecutor;
 }
 
 export class AutomationEngine extends EventEmitter {
   private storage: StorageService;
+  private executor: ActionExecutor | null;
   private checks: CheckModule[] = [];
   private checkTimer: NodeJS.Timeout | null = null;
   private isRunning = false;
@@ -23,6 +26,7 @@ export class AutomationEngine extends EventEmitter {
   constructor(config: AutomationEngineConfig) {
     super();
     this.storage = config.storage;
+    this.executor = config.executor ?? null;
   }
 
   registerCheck(check: CheckModule): void {
@@ -107,6 +111,14 @@ export class AutomationEngine extends EventEmitter {
             if (action.confidence >= config.autoApproveThreshold) {
               this.storage.updateAutomationActionStatus(savedAction.id, 'approved', 'auto');
               autoApproved++;
+
+              // Execute the action in Jira
+              if (this.executor) {
+                const result = await this.executor.execute(savedAction);
+                if (result.success) {
+                  this.storage.updateAutomationActionStatus(savedAction.id, 'executed', 'auto');
+                }
+              }
 
               this.emitEvent({
                 type: 'action_auto_approved',

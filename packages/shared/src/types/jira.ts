@@ -82,6 +82,30 @@ export interface JiraSyncResult {
   sprints?: { synced: number; total: number };
 }
 
+export interface JiraTransition {
+  id: string;
+  name: string;
+  to: {
+    id: string;
+    name: string;
+    statusCategory: {
+      id: number;
+      key: string;
+      name: string;
+    };
+  };
+}
+
+export interface JiraComment {
+  id: string;
+  body: any;
+  created: string;
+  author: {
+    accountId: string;
+    displayName: string;
+  };
+}
+
 export interface MemberTicket {
   key: string;
   summary: string;

@@ -264,9 +264,9 @@ export function createPMRouter(
   });
 
   // Approve a suggestion (and create assignment)
-  router.post('/suggestions/:id/approve', (req: Request, res: Response) => {
+  router.post('/suggestions/:id/approve', async (req: Request, res: Response) => {
     try {
-      const result = pmService.approveSuggestion(req.params.id);
+      const result = await pmService.approveSuggestion(req.params.id);
       if (!result) {
         return res.status(404).json({
           success: false,

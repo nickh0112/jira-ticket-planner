@@ -162,5 +162,22 @@ export function createMeetingsRouter(
     }
   });
 
+  // Create ticket from action item and push to Jira
+  router.post('/action-items/:id/create-in-jira', async (req: Request, res: Response) => {
+    try {
+      const result = await meetingService.createTicketFromActionItemInJira(req.params.id);
+      const response: ApiResponse<typeof result> = {
+        success: true,
+        data: result,
+      };
+      res.json(response);
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create ticket in Jira',
+      });
+    }
+  });
+
   return router;
 }

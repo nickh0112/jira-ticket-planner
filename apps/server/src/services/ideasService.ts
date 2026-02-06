@@ -1,5 +1,6 @@
 import type { StorageService } from './storageService.js';
 import type { AgentService } from './agentService.js';
+import type { JiraService } from './jiraService.js';
 import {
   brainstormIdea,
   generatePRDFromConversation,
@@ -28,15 +29,18 @@ import type {
 interface IdeasServiceDeps {
   storage: StorageService;
   agentService?: AgentService;
+  jiraService?: JiraService | null;
 }
 
 class IdeasService {
   private storage: StorageService;
   private agentService?: AgentService;
+  private jiraService: JiraService | null;
 
-  constructor({ storage, agentService }: IdeasServiceDeps) {
+  constructor({ storage, agentService, jiraService }: IdeasServiceDeps) {
     this.storage = storage;
     this.agentService = agentService;
+    this.jiraService = jiraService ?? null;
   }
 
   // ============================================================================
@@ -300,7 +304,7 @@ class IdeasService {
     return this.storage.rejectIdeaTicketProposal(proposalId);
   }
 
-  async approveProposals(sessionId: string, proposalIds: string[]): Promise<ApproveProposalsResponse> {
+  async approveProposals(sessionId: string, proposalIds: string[], options?: { pushToJira?: boolean }): Promise<ApproveProposalsResponse> {
     const session = this.storage.getIdeaSession(sessionId);
     if (!session) {
       throw new Error('Session not found');
@@ -333,6 +337,34 @@ class IdeasService {
 
       // Update proposal status
       this.storage.approveIdeaTicketProposal(proposalId, ticket.id);
+    }
+
+    // Push to Jira if requested
+    if (options?.pushToJira && this.jiraService) {
+      const jiraConfig = this.storage.getJiraConfig();
+      if (jiraConfig) {
+        const teamMembers = this.storage.getTeamMembers();
+        const epics = this.storage.getEpics();
+
+        for (const ticketId of createdTicketIds) {
+          const ticket = this.storage.getTicket(ticketId);
+          if (!ticket) continue;
+          try {
+            const jiraResponse = await this.jiraService.createIssue(
+              jiraConfig, ticket, { teamMembers, epics }
+            );
+            const jiraUrl = `${jiraConfig.baseUrl}/browse/${jiraResponse.key}`;
+            this.storage.updateTicket(ticketId, {
+              status: 'created',
+              createdInJira: true,
+              jiraKey: jiraResponse.key,
+              jiraUrl,
+            });
+          } catch (error) {
+            console.error(`[ideas] Failed to create Jira issue for ticket ${ticketId}:`, error);
+          }
+        }
+      }
     }
 
     // Update session status if all proposals are processed

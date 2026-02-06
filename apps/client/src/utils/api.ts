@@ -757,11 +757,30 @@ export async function updateIdeaProposal(
 // Approve selected proposals and create tickets
 export async function approveIdeaProposals(
   sessionId: string,
-  proposalIds: string[]
+  proposalIds: string[],
+  options?: { pushToJira?: boolean }
 ): Promise<ApproveProposalsResponse> {
   return fetchApi<ApproveProposalsResponse>(`/ideas/${sessionId}/proposals/approve`, {
     method: 'POST',
-    body: JSON.stringify({ proposalIds }),
+    body: JSON.stringify({ proposalIds, pushToJira: options?.pushToJira }),
+  });
+}
+
+// Create ticket from action item and push to Jira
+export async function createActionItemInJira(
+  actionItemId: string
+): Promise<{ ticket: any; jiraKey?: string }> {
+  return fetchApi<{ ticket: any; jiraKey?: string }>(`/meetings/action-items/${actionItemId}/create-in-jira`, {
+    method: 'POST',
+  });
+}
+
+// Sync ticket enhancements to Jira
+export async function syncTicketToJira(
+  ticketId: string
+): Promise<{ success: boolean; jiraKey?: string }> {
+  return fetchApi<{ success: boolean; jiraKey?: string }>(`/agent/tickets/${ticketId}/sync-to-jira`, {
+    method: 'POST',
   });
 }
 

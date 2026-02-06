@@ -142,6 +142,8 @@ export function AutomationDashboard() {
   }, [config]);
 
   const pendingActions = actions.filter((a) => a.status === 'pending');
+  const executedActions = actions.filter((a) => a.status === 'executed');
+  const approvedActions = actions.filter((a) => a.status === 'approved');
 
   const handleConfigChange = (key: keyof UpdateAutomationConfigInput, value: boolean | number) => {
     setConfigForm((prev) => ({ ...prev, [key]: value }));
@@ -278,6 +280,40 @@ export function AutomationDashboard() {
           </div>
         )}
       </div>
+
+      {/* Executed Actions */}
+      {(executedActions.length > 0 || approvedActions.length > 0) && (
+        <div className="bg-stone-secondary border-2 border-border-gold rounded-lg shadow-pixel overflow-hidden">
+          <div className="px-4 py-3 border-b border-border-gold/30 flex items-center justify-between">
+            <h3 className="font-pixel text-pixel-md text-gold">Recent Activity</h3>
+            <span className="text-text-secondary text-sm font-readable">
+              {executedActions.length} executed, {approvedActions.length} approved
+            </span>
+          </div>
+          <div className="divide-y divide-border-gold/10">
+            {[...executedActions, ...approvedActions].slice(0, 10).map((action) => (
+              <div key={action.id} className="flex items-center justify-between px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <ActionTypeBadge type={action.type} />
+                  <span className="font-readable text-text-primary text-sm">{action.title}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`px-2 py-0.5 rounded text-xs font-pixel ${
+                    action.status === 'executed'
+                      ? 'bg-green-900/40 text-green-400'
+                      : 'bg-blue-900/40 text-blue-400'
+                  }`}>
+                    {action.status === 'executed' ? '\u2713 Executed' : 'Approved'}
+                  </span>
+                  <span className="text-text-secondary text-xs font-readable">
+                    {formatTime(action.createdAt)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Run History */}
       <div className="bg-stone-secondary border-2 border-border-gold rounded-lg shadow-pixel overflow-hidden">

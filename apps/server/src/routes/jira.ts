@@ -563,5 +563,136 @@ export function createJiraRouter(storage: ReturnType<typeof createStorageService
     }
   });
 
+  // Get available transitions for an issue
+  router.get('/issues/:issueKey/transitions', async (req, res) => {
+    try {
+      const jiraService = createJiraService();
+      if (!jiraService) {
+        return res.status(400).json({ success: false, error: 'Jira credentials not configured' });
+      }
+      const config = storage.getJiraConfig();
+      if (!config) {
+        return res.status(400).json({ success: false, error: 'Jira configuration not set' });
+      }
+
+      const transitions = await jiraService.getTransitions(config, req.params.issueKey);
+      res.json({ success: true, data: { transitions } });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get transitions',
+      });
+    }
+  });
+
+  // Update a Jira issue
+  router.put('/issues/:issueKey', async (req, res) => {
+    try {
+      const jiraService = createJiraService();
+      if (!jiraService) {
+        return res.status(400).json({ success: false, error: 'Jira credentials not configured' });
+      }
+      const config = storage.getJiraConfig();
+      if (!config) {
+        return res.status(400).json({ success: false, error: 'Jira configuration not set' });
+      }
+
+      const { fields } = req.body;
+      if (!fields || typeof fields !== 'object') {
+        return res.status(400).json({ success: false, error: 'fields object is required' });
+      }
+
+      await jiraService.updateIssue(config, req.params.issueKey, fields);
+      res.json({ success: true, data: { updated: true } });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to update issue',
+      });
+    }
+  });
+
+  // Assign a Jira issue
+  router.post('/issues/:issueKey/assign', async (req, res) => {
+    try {
+      const jiraService = createJiraService();
+      if (!jiraService) {
+        return res.status(400).json({ success: false, error: 'Jira credentials not configured' });
+      }
+      const config = storage.getJiraConfig();
+      if (!config) {
+        return res.status(400).json({ success: false, error: 'Jira configuration not set' });
+      }
+
+      const { accountId } = req.body;
+      // accountId can be null (to unassign) or a string
+      if (accountId !== null && typeof accountId !== 'string') {
+        return res.status(400).json({ success: false, error: 'accountId must be a string or null' });
+      }
+
+      await jiraService.assignIssue(config, req.params.issueKey, accountId);
+      res.json({ success: true, data: { assigned: true } });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to assign issue',
+      });
+    }
+  });
+
+  // Transition a Jira issue
+  router.post('/issues/:issueKey/transition', async (req, res) => {
+    try {
+      const jiraService = createJiraService();
+      if (!jiraService) {
+        return res.status(400).json({ success: false, error: 'Jira credentials not configured' });
+      }
+      const config = storage.getJiraConfig();
+      if (!config) {
+        return res.status(400).json({ success: false, error: 'Jira configuration not set' });
+      }
+
+      const { transitionId } = req.body;
+      if (!transitionId || typeof transitionId !== 'string') {
+        return res.status(400).json({ success: false, error: 'transitionId is required' });
+      }
+
+      await jiraService.transitionIssue(config, req.params.issueKey, transitionId);
+      res.json({ success: true, data: { transitioned: true } });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to transition issue',
+      });
+    }
+  });
+
+  // Add a comment to a Jira issue
+  router.post('/issues/:issueKey/comment', async (req, res) => {
+    try {
+      const jiraService = createJiraService();
+      if (!jiraService) {
+        return res.status(400).json({ success: false, error: 'Jira credentials not configured' });
+      }
+      const config = storage.getJiraConfig();
+      if (!config) {
+        return res.status(400).json({ success: false, error: 'Jira configuration not set' });
+      }
+
+      const { body: commentBody } = req.body;
+      if (!commentBody || typeof commentBody !== 'string') {
+        return res.status(400).json({ success: false, error: 'body (comment text) is required' });
+      }
+
+      const comment = await jiraService.addComment(config, req.params.issueKey, commentBody);
+      res.json({ success: true, data: { comment } });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to add comment',
+      });
+    }
+  });
+
   return router;
 }

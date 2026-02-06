@@ -234,7 +234,7 @@ export class PMService {
   /**
    * Approve a suggestion and create assignment
    */
-  approveSuggestion(suggestionId: string): { suggestion: AITicketSuggestion; assignment: PMAssignment } | null {
+  async approveSuggestion(suggestionId: string): Promise<{ suggestion: AITicketSuggestion; assignment: PMAssignment } | null> {
     const suggestion = this.storage.getAISuggestion(suggestionId);
     if (!suggestion || suggestion.status !== 'pending') return null;
 
@@ -255,6 +255,23 @@ export class PMService {
       this.storage.updateTicket(suggestion.ticketId, {
         assigneeId: suggestion.teamMemberId,
       });
+    }
+
+    // Best-effort: assign in Jira if possible
+    if (this.jiraService) {
+      const jiraConfig = this.storage.getJiraConfig();
+      const ticket = suggestion.ticketId ? this.storage.getTicket(suggestion.ticketId) : null;
+      const member = this.storage.getTeamMember(suggestion.teamMemberId);
+
+      if (jiraConfig && ticket?.jiraKey && member?.jiraAccountId) {
+        try {
+          await this.jiraService.assignIssue(jiraConfig, ticket.jiraKey, member.jiraAccountId);
+          console.log(`[pm] Assigned ${ticket.jiraKey} to ${member.name} in Jira`);
+        } catch (error) {
+          console.error(`[pm] Failed to assign ${ticket.jiraKey} in Jira:`, error);
+          // Don't fail the local operation
+        }
+      }
     }
 
     return { suggestion: updatedSuggestion, assignment };

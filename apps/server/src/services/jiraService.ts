@@ -8,6 +8,8 @@ import type {
   JiraUser,
   JiraSprint,
   JiraEpic,
+  JiraTransition,
+  JiraComment,
   TicketType,
   TicketPriority,
 } from '@jira-planner/shared';
@@ -47,6 +49,8 @@ interface JiraServiceConfig {
 export class JiraService {
   private email: string;
   private apiToken: string;
+  private lastRequestTime = 0;
+  private static readonly MIN_REQUEST_GAP_MS = 100;
 
   constructor(config: JiraServiceConfig) {
     this.email = config.email;
@@ -66,6 +70,14 @@ export class JiraService {
   ): Promise<T> {
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
+        // Throttle: ensure minimum gap between requests
+        const now = Date.now();
+        const elapsed = now - this.lastRequestTime;
+        if (elapsed < JiraService.MIN_REQUEST_GAP_MS) {
+          await new Promise((resolve) => setTimeout(resolve, JiraService.MIN_REQUEST_GAP_MS - elapsed));
+        }
+        this.lastRequestTime = Date.now();
+
         console.log(`[jira] Attempt ${attempt + 1}/${retries}: ${options.method} ${url}`);
 
         const response = await fetch(url, {
@@ -79,6 +91,15 @@ export class JiraService {
         });
 
         if (!response.ok) {
+          // Handle 429 rate limiting with Retry-After header
+          if (response.status === 429) {
+            const retryAfter = response.headers.get('Retry-After');
+            const waitSeconds = retryAfter ? parseInt(retryAfter, 10) : 5;
+            console.warn(`[jira] Rate limited (429). Waiting ${waitSeconds}s before retry...`);
+            await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+            continue; // Retry this attempt
+          }
+
           const errorBody = await response.text();
           console.error(`[jira] HTTP ${response.status}: ${errorBody}`);
 
@@ -98,6 +119,11 @@ export class JiraService {
             }
           }
           throw new Error(errorMessage);
+        }
+
+        if (response.status === 204 || response.headers.get('content-length') === '0') {
+          console.log(`[jira] Success (no content): ${options.method} ${url}`);
+          return undefined as T;
         }
 
         const data = await response.json();
@@ -478,6 +504,57 @@ export class JiraService {
       return config.designBoardId;
     }
     return config.defaultBoardId ?? null;
+  }
+
+  async updateIssue(config: JiraConfig, issueKey: string, fields: Record<string, any>): Promise<void> {
+    const url = `${config.baseUrl}/rest/api/3/issue/${issueKey}`;
+    await this.fetchWithRetry<void>(url, {
+      method: 'PUT',
+      body: JSON.stringify({ fields }),
+    });
+  }
+
+  async assignIssue(config: JiraConfig, issueKey: string, accountId: string | null): Promise<void> {
+    const url = `${config.baseUrl}/rest/api/3/issue/${issueKey}/assignee`;
+    await this.fetchWithRetry<void>(url, {
+      method: 'PUT',
+      body: JSON.stringify({ accountId }),
+    });
+  }
+
+  async getTransitions(config: JiraConfig, issueKey: string): Promise<JiraTransition[]> {
+    const url = `${config.baseUrl}/rest/api/3/issue/${issueKey}/transitions`;
+    const result = await this.fetchWithRetry<{ transitions: JiraTransition[] }>(url, {
+      method: 'GET',
+    });
+    return result.transitions;
+  }
+
+  async transitionIssue(config: JiraConfig, issueKey: string, transitionId: string): Promise<void> {
+    const url = `${config.baseUrl}/rest/api/3/issue/${issueKey}/transitions`;
+    await this.fetchWithRetry<void>(url, {
+      method: 'POST',
+      body: JSON.stringify({ transition: { id: transitionId } }),
+    });
+  }
+
+  async addComment(config: JiraConfig, issueKey: string, bodyText: string): Promise<JiraComment> {
+    const url = `${config.baseUrl}/rest/api/3/issue/${issueKey}/comment`;
+    return this.fetchWithRetry<JiraComment>(url, {
+      method: 'POST',
+      body: JSON.stringify({
+        body: {
+          type: 'doc',
+          version: 1,
+          content: [
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: bodyText }],
+            },
+          ],
+        },
+      }),
+    });
   }
 
   /**
