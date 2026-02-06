@@ -345,7 +345,26 @@ export class JiraSyncService extends EventEmitter {
               });
             }
 
+            // Third fallback: match by member name against displayName
+            if (!member) {
+              member = teamMembers.find(m =>
+                m.name.toLowerCase() === ticket.assignee!.displayName.toLowerCase()
+              );
+              // Auto-populate jiraAccountId for future matches
+              if (member && ticket.assignee?.accountId) {
+                this.storage.updateTeamMember(member.id, {
+                  jiraAccountId: ticket.assignee.accountId,
+                });
+                // Update local cache too
+                member = { ...member, jiraAccountId: ticket.assignee.accountId };
+              }
+            }
+
             assigneeId = member?.id || null;
+
+            if (!assigneeId && ticket.assignee) {
+              console.log(`[sync] No team member match for Jira assignee: ${ticket.assignee.displayName} (${ticket.assignee.accountId})`);
+            }
           }
 
           // Normalize priority to match database constraint (lowercase)

@@ -457,38 +457,48 @@ export class PMService {
 
     for (const engineer of engineers) {
       // Check for no assignment alert
-      if (engineer.daysSinceLastAssignment !== null &&
+      if (engineer.daysSinceLastAssignment === null ||
           engineer.daysSinceLastAssignment >= config.underutilizationDays) {
         // Only create if no existing active alert of this type
         if (!this.storage.hasActiveAlertForMember(engineer.memberId, 'no_assignment')) {
-          const severity = engineer.daysSinceLastAssignment >= config.underutilizationDays * 2
+          const severity = engineer.daysSinceLastAssignment !== null &&
+            engineer.daysSinceLastAssignment >= config.underutilizationDays * 2
             ? 'critical'
             : 'warning';
+
+          const message = engineer.daysSinceLastAssignment === null
+            ? `${engineer.memberName} has never been assigned a ticket`
+            : `${engineer.memberName} has not been assigned a ticket in ${engineer.daysSinceLastAssignment} days`;
 
           const alert = this.storage.createPMAlert({
             teamMemberId: engineer.memberId,
             alertType: 'no_assignment',
             severity,
-            message: `${engineer.memberName} has not been assigned a ticket in ${engineer.daysSinceLastAssignment} days`,
+            message,
           });
           newAlerts.push(alert);
         }
       }
 
       // Check for no activity alert
-      if (engineer.daysSinceLastActivity !== null &&
+      if (engineer.daysSinceLastActivity === null ||
           engineer.daysSinceLastActivity >= config.inactivityDays) {
         // Only create if no existing active alert of this type
         if (!this.storage.hasActiveAlertForMember(engineer.memberId, 'no_activity')) {
-          const severity = engineer.daysSinceLastActivity >= config.inactivityDays * 2
+          const severity = engineer.daysSinceLastActivity !== null &&
+            engineer.daysSinceLastActivity >= config.inactivityDays * 2
             ? 'critical'
             : 'warning';
+
+          const message = engineer.daysSinceLastActivity === null
+            ? `${engineer.memberName} has no recorded activity`
+            : `${engineer.memberName} has had no activity in ${engineer.daysSinceLastActivity} days`;
 
           const alert = this.storage.createPMAlert({
             teamMemberId: engineer.memberId,
             alertType: 'no_activity',
             severity,
-            message: `${engineer.memberName} has had no activity in ${engineer.daysSinceLastActivity} days`,
+            message,
           });
           newAlerts.push(alert);
         }
@@ -509,17 +519,19 @@ export class PMService {
     underutilizationThreshold: number,
     inactivityThreshold: number
   ): EngineerStatusType {
-    // Inactive: no activity for X days
+    // Inactive: no activity for X days, or never had activity
     if (daysSinceLastActivity !== null && daysSinceLastActivity >= inactivityThreshold) {
       return 'inactive';
     }
 
-    // Underutilized: no assignment for X days
-    if (daysSinceLastAssignment !== null && daysSinceLastAssignment >= underutilizationThreshold) {
-      return 'underutilized';
+    // Underutilized: no assignment for X days, or never assigned
+    if (currentTickets === 0) {
+      if (daysSinceLastAssignment === null || daysSinceLastAssignment >= underutilizationThreshold) {
+        return 'underutilized';
+      }
     }
 
-    // Idle: no current work
+    // Idle: no current work but was recently assigned
     if (currentTickets === 0) {
       return 'idle';
     }
@@ -618,13 +630,13 @@ export class PMService {
       reasons.push('no_active_work');
     }
 
-    // Long idle (no activity)
-    if (daysSinceLastActivity !== null && daysSinceLastActivity >= config.inactivityDays) {
+    // Long idle (no activity, or never had activity)
+    if (daysSinceLastActivity === null || daysSinceLastActivity >= config.inactivityDays) {
       reasons.push('long_idle');
     }
 
-    // Stale ticket (underutilized)
-    if (daysSinceLastAssignment !== null && daysSinceLastAssignment >= config.underutilizationDays) {
+    // Stale ticket (underutilized, or never assigned)
+    if (daysSinceLastAssignment === null || daysSinceLastAssignment >= config.underutilizationDays) {
       reasons.push('stale_ticket');
     }
 
