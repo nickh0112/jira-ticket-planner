@@ -172,6 +172,69 @@ export function createBitbucketRouter(
     }
   });
 
+  // Auto-map team members to Bitbucket usernames by matching display names
+  router.post('/team/auto-map', async (req: Request, res: Response) => {
+    try {
+      const config = storage.getBitbucketConfig();
+      if (!config) {
+        res.status(400).json({ success: false, error: 'Bitbucket not configured' });
+        return;
+      }
+
+      const service = getBitbucketService();
+      if (!service) {
+        res.status(500).json({ success: false, error: 'Bitbucket service not available' });
+        return;
+      }
+
+      const workspaceMembers = await service.getWorkspaceMembers(config.workspace);
+      const teamMembers = storage.getTeamMembers();
+
+      const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      const mapped: Array<{ memberId: string; memberName: string; bitbucketUsername: string }> = [];
+
+      for (const tm of teamMembers) {
+        if (tm.bitbucketUsername) continue; // already mapped
+
+        const tmNorm = normalize(tm.name);
+
+        // Try exact normalized match on displayName first, then username
+        const match = workspaceMembers.find(wm =>
+          normalize(wm.displayName) === tmNorm
+        ) ?? workspaceMembers.find(wm =>
+          normalize(wm.username) === tmNorm
+        ) ?? workspaceMembers.find(wm => {
+          // Partial match: check if all parts of one name appear in the other
+          const wmParts = normalize(wm.displayName).match(/.{2,}/g) || [];
+          const tmParts = tmNorm.match(/.{2,}/g) || [];
+          if (tmParts.length === 0 || wmParts.length === 0) return false;
+          // Check if first+last name tokens overlap
+          const wmTokens = wm.displayName.toLowerCase().split(/\s+/);
+          const tmTokens = tm.name.toLowerCase().split(/\s+/);
+          const commonTokens = tmTokens.filter(t => wmTokens.some(w => w === t || w.includes(t) || t.includes(w)));
+          return commonTokens.length >= 2 || (commonTokens.length === 1 && tmTokens.length === 1);
+        });
+
+        if (match) {
+          storage.updateTeamMember(tm.id, { bitbucketUsername: match.username });
+          mapped.push({ memberId: tm.id, memberName: tm.name, bitbucketUsername: match.username });
+        }
+      }
+
+      const response: ApiResponse<{ mapped: typeof mapped; total: number }> = {
+        success: true,
+        data: { mapped, total: mapped.length },
+      };
+      res.json(response);
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Auto-map failed',
+      });
+    }
+  });
+
   // Map team member to Bitbucket username
   router.put('/team/:id/bitbucket', (req: Request, res: Response) => {
     try {

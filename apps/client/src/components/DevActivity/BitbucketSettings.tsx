@@ -4,6 +4,7 @@ import {
   saveBitbucketConfig,
   testBitbucketConnection,
   mapTeamMemberToBitbucket,
+  autoMapBitbucketUsernames,
   getBitbucketRepos,
   discoverBitbucketRepos,
   toggleBitbucketRepo,
@@ -31,6 +32,10 @@ export function BitbucketSettings({ onConfigured }: BitbucketSettingsProps) {
   // Team mapping state
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+
+  // Auto-map state
+  const [isAutoMapping, setIsAutoMapping] = useState(false);
+  const [autoMapResult, setAutoMapResult] = useState<{ mapped: Array<{ memberName: string }>; total: number } | null>(null);
 
   // Repos state
   const [repos, setRepos] = useState<BitbucketRepo[]>([]);
@@ -139,6 +144,22 @@ export function BitbucketSettings({ onConfigured }: BitbucketSettingsProps) {
       );
     } catch (error) {
       console.error('Failed to map member:', error);
+    }
+  };
+
+  const handleAutoMap = async () => {
+    setIsAutoMapping(true);
+    setAutoMapResult(null);
+    try {
+      const result = await autoMapBitbucketUsernames();
+      setAutoMapResult(result);
+      // Reload team members to reflect new mappings
+      await loadTeamMapping();
+    } catch (error) {
+      console.error('Auto-map failed:', error);
+      setAutoMapResult({ mapped: [], total: 0 });
+    } finally {
+      setIsAutoMapping(false);
     }
   };
 
@@ -304,7 +325,24 @@ export function BitbucketSettings({ onConfigured }: BitbucketSettingsProps) {
       {/* Team Mapping */}
       {activeSection === 'mapping' && (
         <div className="stone-panel p-4">
-          <h3 className="font-pixel text-pixel-md text-gold mb-4">Team Member Mapping</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-pixel text-pixel-md text-gold">Team Member Mapping</h3>
+            <button
+              type="button"
+              onClick={handleAutoMap}
+              disabled={isAutoMapping}
+              className="stone-button stone-button-sm"
+            >
+              {isAutoMapping ? 'Mapping...' : 'Auto-Map from Workspace'}
+            </button>
+          </div>
+          {autoMapResult && (
+            <div className={`p-3 rounded mb-4 ${autoMapResult.total > 0 ? 'bg-green-500/20 text-green-300' : 'bg-yellow-500/20 text-yellow-300'}`}>
+              {autoMapResult.total > 0
+                ? `Mapped ${autoMapResult.total} member${autoMapResult.total > 1 ? 's' : ''}: ${autoMapResult.mapped.map(m => m.memberName).join(', ')}`
+                : 'No new matches found. Map members manually below.'}
+            </div>
+          )}
           <p className="text-beige/60 text-sm mb-4">
             Link your team members to their Bitbucket usernames to track their activity.
           </p>

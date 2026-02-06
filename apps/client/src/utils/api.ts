@@ -854,6 +854,11 @@ export async function getBitbucketWorkspaceMembers(): Promise<BitbucketWorkspace
   return fetchApi<BitbucketWorkspaceMember[]>('/bitbucket/workspace-members');
 }
 
+// Auto-map team members to Bitbucket usernames
+export async function autoMapBitbucketUsernames(): Promise<{ mapped: Array<{ memberId: string; memberName: string; bitbucketUsername: string }>; total: number }> {
+  return fetchApi('/bitbucket/team/auto-map', { method: 'POST' });
+}
+
 // Map team member to Bitbucket username
 export async function mapTeamMemberToBitbucket(
   memberId: string,
