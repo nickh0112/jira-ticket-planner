@@ -55,13 +55,28 @@ export function createBitbucketRouter(
   router.put('/config', (req: Request, res: Response) => {
     try {
       const input: CreateBitbucketConfigInput = req.body;
+      const existing = storage.getBitbucketConfig();
 
-      if (!input.workspace || !input.email || !input.appPassword) {
+      if (!input.workspace || !input.email) {
         res.status(400).json({
           success: false,
-          error: 'Missing required fields: workspace, email, appPassword',
+          error: 'Missing required fields: workspace, email',
         });
         return;
+      }
+
+      // appPassword is required for first-time setup, optional for updates
+      if (!existing && !input.appPassword) {
+        res.status(400).json({
+          success: false,
+          error: 'API token is required for initial setup',
+        });
+        return;
+      }
+
+      // If updating without a new password, keep the existing one
+      if (existing && !input.appPassword) {
+        input.appPassword = existing.appPassword;
       }
 
       const config = storage.saveBitbucketConfig(input);

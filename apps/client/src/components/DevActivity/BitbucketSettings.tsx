@@ -21,6 +21,7 @@ export function BitbucketSettings({ onConfigured }: BitbucketSettingsProps) {
   const [workspace, setWorkspace] = useState('');
   const [email, setEmail] = useState('');
   const [appPassword, setAppPassword] = useState('');
+  const [hasExistingToken, setHasExistingToken] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -49,6 +50,7 @@ export function BitbucketSettings({ onConfigured }: BitbucketSettingsProps) {
       if (config) {
         setWorkspace(config.workspace);
         setEmail(config.email);
+        setHasExistingToken(!!config.appPassword);
         setIsConfigured(true);
 
         // Load sync status
@@ -62,7 +64,7 @@ export function BitbucketSettings({ onConfigured }: BitbucketSettingsProps) {
   };
 
   const handleSave = async () => {
-    if (!workspace || !email || !appPassword) {
+    if (!workspace || !email || (!appPassword && !hasExistingToken)) {
       setTestResult({ success: false, message: 'All fields are required' });
       return;
     }
@@ -71,6 +73,7 @@ export function BitbucketSettings({ onConfigured }: BitbucketSettingsProps) {
     try {
       await saveBitbucketConfig({ workspace, email, appPassword });
       setTestResult({ success: true, message: 'Configuration saved!' });
+      if (appPassword) setHasExistingToken(true);
       setIsConfigured(true);
       onConfigured?.();
     } catch (error) {
@@ -84,7 +87,7 @@ export function BitbucketSettings({ onConfigured }: BitbucketSettingsProps) {
   };
 
   const handleTest = async () => {
-    if (!workspace || !email || !appPassword) {
+    if (!workspace || !email || (!appPassword && !hasExistingToken)) {
       setTestResult({ success: false, message: 'All fields are required' });
       return;
     }
@@ -252,9 +255,14 @@ export function BitbucketSettings({ onConfigured }: BitbucketSettingsProps) {
               type="password"
               value={appPassword}
               onChange={(e) => setAppPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder={hasExistingToken ? 'Token saved — leave blank to keep current' : '••••••••'}
               className="stone-input w-full"
             />
+            {hasExistingToken && !appPassword && (
+              <p className="text-xs text-green-400 mt-1">
+                API token is saved. Enter a new value only if you want to change it.
+              </p>
+            )}
             <p className="text-xs text-beige/40 mt-1">
               Create an API token with scopes in Atlassian Account Settings (Security {'>'} API tokens {'>'} Create API token with scopes {'>'} Select Bitbucket)
             </p>
@@ -274,6 +282,7 @@ export function BitbucketSettings({ onConfigured }: BitbucketSettingsProps) {
 
           <div className="flex gap-2">
             <button
+              type="button"
               onClick={handleTest}
               disabled={isTesting || isSaving}
               className="stone-button"
@@ -281,6 +290,7 @@ export function BitbucketSettings({ onConfigured }: BitbucketSettingsProps) {
               {isTesting ? 'Testing...' : 'Test Connection'}
             </button>
             <button
+              type="button"
               onClick={handleSave}
               disabled={isTesting || isSaving}
               className="stone-button stone-button-primary"
