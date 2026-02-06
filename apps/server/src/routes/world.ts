@@ -343,47 +343,5 @@ export function createTeamExtensionRouter(storage: StorageService): Router {
     }
   });
 
-  // Get all members with progress (for leaderboard)
-  router.get('/leaderboard', (req: Request, res: Response) => {
-    try {
-      const members = storage.getTeamMembers();
-      const allProgress = storage.getAllMemberProgress();
-
-      // Create a map for quick lookup
-      const progressMap = new Map(allProgress.map(p => [p.teamMemberId, p]));
-
-      // Combine member data with progress
-      const leaderboard = members.map(member => {
-        const progress = progressMap.get(member.id) || {
-          xp: 0,
-          level: 1,
-          title: 'Recruit',
-          ticketsCompleted: 0,
-        };
-
-        return {
-          id: member.id,
-          name: member.name,
-          role: member.role,
-          xp: progress.xp,
-          level: progress.level,
-          title: progress.title,
-          ticketsCompleted: progress.ticketsCompleted,
-        };
-      }).sort((a, b) => b.xp - a.xp);
-
-      const response: ApiResponse<typeof leaderboard> = {
-        success: true,
-        data: leaderboard,
-      };
-      res.json(response);
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to get leaderboard',
-      });
-    }
-  });
-
   return router;
 }
