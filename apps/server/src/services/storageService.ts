@@ -541,40 +541,55 @@ class StorageService {
     return row ? this.mapTeamMemberRow(row) : null;
   }
 
-  updateTeamMembersJiraAccountIds(members: { jiraUsername?: string; jiraAccountId: string }[]): {
+  syncTeamMembersFromJira(members: { displayName: string; jiraUsername?: string; jiraAccountId: string }[]): {
     updated: number;
+    created: number;
     skipped: number;
   } {
     let updated = 0;
+    let created = 0;
     let skipped = 0;
 
-    const updateAll = this.db.transaction((memberList) => {
+    const syncAll = this.db.transaction((memberList) => {
       for (const input of memberList) {
-        if (!input.jiraUsername) {
+        if (!input.jiraAccountId) {
           skipped++;
           continue;
         }
 
-        // Find existing member by jiraUsername
-        const existing = this.getTeamMemberByJiraUsername(input.jiraUsername);
+        // First try to match by jiraAccountId
+        const byAccountId = this.db.prepare('SELECT * FROM team_members WHERE jira_account_id = ?').get(input.jiraAccountId) as any;
+        if (byAccountId) {
+          updated++;
+          continue;
+        }
 
-        if (existing) {
-          // Only update jiraAccountId, preserve everything else
+        // Then try to match by jiraUsername
+        const byUsername = input.jiraUsername ? this.getTeamMemberByJiraUsername(input.jiraUsername) : null;
+        if (byUsername) {
           this.db.prepare(`
             UPDATE team_members
             SET jira_account_id = ?, updated_at = ?
             WHERE id = ?
-          `).run(input.jiraAccountId, new Date().toISOString(), existing.id);
+          `).run(input.jiraAccountId, new Date().toISOString(), byUsername.id);
           updated++;
-        } else {
-          // No matching member - skip (don't create new)
-          skipped++;
+          continue;
         }
+
+        // No match found — create a new team member
+        this.createTeamMember({
+          name: input.displayName,
+          role: 'Software Engineer',
+          skills: [],
+          jiraUsername: input.displayName,
+          jiraAccountId: input.jiraAccountId,
+        });
+        created++;
       }
     });
 
-    updateAll(members);
-    return { updated, skipped };
+    syncAll(members);
+    return { updated, created, skipped };
   }
 
   private mapTeamMemberRow(row: any): TeamMember {

@@ -77,7 +77,7 @@ export interface JiraEpic {
 }
 
 export interface JiraSyncResult {
-  users: { synced: number; total: number };
+  users: { synced: number; created: number; total: number };
   epics: { synced: number; total: number };
   sprints?: { synced: number; total: number };
 }

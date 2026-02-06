@@ -283,9 +283,10 @@ export function createJiraRouter(storage: ReturnType<typeof createStorageService
       // Fetch team members from team-filtered tickets (not all project users)
       const jiraUsers = await jiraService.getTeamMembersFromTickets(config);
 
-      // Only update jiraAccountId on existing members, don't add new ones
-      const memberUpdateResult = storage.updateTeamMembersJiraAccountIds(
+      // Sync team members from Jira: update existing, create new
+      const memberUpdateResult = storage.syncTeamMembersFromJira(
         jiraUsers.map((user) => ({
+          displayName: user.displayName || user.accountId,
           jiraUsername: user.emailAddress || user.displayName || user.accountId,
           jiraAccountId: user.accountId,
         }))
@@ -318,7 +319,7 @@ export function createJiraRouter(storage: ReturnType<typeof createStorageService
       }
 
       const result: JiraSyncResult = {
-        users: { synced: memberUpdateResult.updated, total: jiraUsers.length },
+        users: { synced: memberUpdateResult.updated, created: memberUpdateResult.created, total: jiraUsers.length },
         epics: { synced: syncedEpics.length, total: jiraEpics.length },
         sprints: { synced: sprintsSynced, total: sprintsSynced },
       };

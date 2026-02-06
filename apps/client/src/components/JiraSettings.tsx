@@ -489,7 +489,7 @@ export function JiraSettings() {
               Sync completed successfully!
             </p>
             <ul className="font-readable text-sm text-beige/70 space-y-1">
-              <li>Users synced: {syncResult.users.synced} / {syncResult.users.total}</li>
+              <li>Users: created {syncResult.users.created} new, updated {syncResult.users.synced} existing ({syncResult.users.total} in Jira)</li>
               <li>Epics synced: {syncResult.epics.synced} / {syncResult.epics.total}</li>
               {syncResult.sprints && (
                 <li>Sprints cached: {syncResult.sprints.synced}</li>
