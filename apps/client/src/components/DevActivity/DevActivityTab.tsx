@@ -127,7 +127,6 @@ export function DevActivityTab() {
       {activeSubTab === 'settings' && (
         <BitbucketSettings onConfigured={() => {
           setIsConfigured(true);
-          setActiveSubTab('activity');
         }} />
       )}
     </div>
