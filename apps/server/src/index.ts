@@ -108,7 +108,7 @@ const actionExecutor = new ActionExecutor({ storage, jiraService });
 
 // Initialize Automation Engine (replaces pmBackgroundService)
 const automationEngine = createAutomationEngine({ storage, executor: actionExecutor });
-automationEngine.registerCheck(new PMCheckModule(pmService));
+automationEngine.registerCheck(new PMCheckModule(pmService, syncService));
 automationEngine.registerCheck(new StaleTicketCheckModule());
 automationEngine.registerCheck(new AccountabilityCheckModule());
 automationEngine.registerCheck(new SprintHealthCheckModule());

@@ -710,6 +710,7 @@ export class JiraService {
   /**
    * Fetch tickets for a specific team member
    * Used for character screen display
+   * Note: No cf[10104] team filter — assignee already scopes to a known team member
    */
   async getTicketsForMember(
     config: JiraConfig,
@@ -718,13 +719,7 @@ export class JiraService {
   ): Promise<JiraTicketForLearning[]> {
     const { maxResults = 100 } = options;
 
-    // Build JQL with team filter if configured
-    let jql: string;
-    if (config.teamValue) {
-      jql = `project = ${config.projectKey} AND assignee = "${accountId}" AND cf[10104] = "${config.teamValue}" ORDER BY updated DESC`;
-    } else {
-      jql = `project = ${config.projectKey} AND assignee = "${accountId}" ORDER BY updated DESC`;
-    }
+    const jql = `project = ${config.projectKey} AND assignee = "${accountId}" ORDER BY updated DESC`;
 
     return this.getRecentTickets(config, { jql, maxResults });
   }
@@ -732,17 +727,51 @@ export class JiraService {
   /**
    * Fetch active (non-completed) tickets from Jira
    * Used to sync ticket assignments for PM Dashboard
+   *
+   * Two-pass approach when teamValue is configured:
+   *   Pass 1: Non-epic tickets directly tagged with cf[10104] (rare but possible)
+   *   Pass 2: Children of team epics via `parent in (...)` batched queries
+   * This works around cf[10104] only being set on Epics in most Jira setups.
    */
   async getActiveTickets(config: JiraConfig): Promise<JiraTicketForLearning[]> {
-    // Build JQL with team filter if configured
-    // Exclude tickets not updated in 90+ days to filter out stale/hung tickets
-    let jql: string;
-    if (config.teamValue) {
-      jql = `project = ${config.projectKey} AND cf[10104] = "${config.teamValue}" AND status NOT IN (Done, Closed, Resolved) AND updated >= -90d ORDER BY updated DESC`;
-    } else {
-      jql = `project = ${config.projectKey} AND status NOT IN (Done, Closed, Resolved) AND updated >= -90d ORDER BY updated DESC`;
+    const baseFilter = `project = ${config.projectKey} AND issuetype != Epic AND status NOT IN (Done, Closed, Resolved) AND updated >= -90d`;
+
+    if (!config.teamValue) {
+      const jql = `${baseFilter} ORDER BY updated DESC`;
+      return this.getRecentTickets(config, { jql });
     }
-    return this.getRecentTickets(config, { jql });
+
+    // Pass 1: Non-epic tickets directly tagged with cf[10104]
+    const directJql = `${baseFilter} AND cf[10104] = "${config.teamValue}" ORDER BY updated DESC`;
+    const directTickets = await this.getRecentTickets(config, { jql: directJql });
+
+    // Pass 2: Get team epics, then fetch their children
+    const epics = await this.getEpics(config);
+    const epicKeys = epics.map(e => e.key);
+    console.log(`[jira] Found ${epicKeys.length} team epics, fetching child tickets...`);
+
+    const childTickets: JiraTicketForLearning[] = [];
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < epicKeys.length; i += BATCH_SIZE) {
+      const batch = epicKeys.slice(i, i + BATCH_SIZE);
+      const parentList = batch.map(k => `"${k}"`).join(', ');
+      const childJql = `${baseFilter} AND parent in (${parentList}) ORDER BY updated DESC`;
+      const batchResult = await this.getRecentTickets(config, { jql: childJql });
+      console.log(`[jira] Batch ${Math.floor(i / BATCH_SIZE) + 1}: fetched ${batchResult.length} tickets`);
+      childTickets.push(...batchResult);
+    }
+
+    // Deduplicate by ticket key
+    const seen = new Set<string>();
+    const all: JiraTicketForLearning[] = [];
+    for (const ticket of [...directTickets, ...childTickets]) {
+      if (!seen.has(ticket.key)) {
+        seen.add(ticket.key);
+        all.push(ticket);
+      }
+    }
+
+    return all;
   }
 
   private mapJiraIssueToLearningTicket(issue: any, config: JiraConfig): JiraTicketForLearning {

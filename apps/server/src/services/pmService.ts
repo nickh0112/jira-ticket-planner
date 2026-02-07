@@ -405,14 +405,16 @@ export class PMService {
       const ticket = t.ticketId ? this.storage.getTicket(t.ticketId) : null;
       const hoursInStatus = this.hoursSince(new Date(t.assignedAt));
 
+      const displayStatus = ticket?.jiraStatus || ticket?.status || 'In Progress';
+
       return {
         jiraKey: t.jiraKey,
         title: ticket?.title || 'Unknown ticket',
-        status: ticket?.status || 'In Progress',
+        status: displayStatus,
         priority: ticket?.priority || 'Medium',
         updated: t.assignedAt,
         hoursInStatus,
-        isStale: hoursInStatus > staleThresholdHours && !(ticket?.status || '').toLowerCase().includes('released'),
+        isStale: hoursInStatus > staleThresholdHours && !displayStatus.toLowerCase().includes('released'),
         sprint: null,
       };
     });

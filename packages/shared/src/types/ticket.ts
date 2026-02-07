@@ -17,6 +17,7 @@ export interface Ticket {
   createdInJira: boolean;
   jiraKey?: string;
   jiraUrl?: string;
+  jiraStatus?: string;  // Real Jira status (e.g., "In Progress", "Code Review")
   featureGroupId: string | null;  // Links related tickets (e.g., FE/BE/ML split)
   createdAt: string;
   updatedAt: string;

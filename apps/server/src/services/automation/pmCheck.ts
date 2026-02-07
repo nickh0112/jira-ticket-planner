@@ -1,17 +1,31 @@
 import type { CheckModule, CheckContext, ProposedAction } from './types.js';
 import type { PMService } from '../pmService.js';
+import type { JiraSyncService } from '../jiraSyncService.js';
 
 export class PMCheckModule implements CheckModule {
   name = 'pm_check' as const;
   enabled = true;
   private pmService: PMService;
+  private jiraSyncService: JiraSyncService;
 
-  constructor(pmService: PMService) {
+  constructor(pmService: PMService, jiraSyncService: JiraSyncService) {
     this.pmService = pmService;
+    this.jiraSyncService = jiraSyncService;
   }
 
   async run(context: CheckContext): Promise<ProposedAction[]> {
     const actions: ProposedAction[] = [];
+
+    // Sync active tickets from Jira before generating alerts/suggestions
+    try {
+      const syncResult = await this.jiraSyncService.syncActiveTickets();
+      console.log(`[pm_check] Synced ${syncResult.synced} active tickets from Jira`);
+      if (syncResult.errors.length > 0) {
+        console.warn(`[pm_check] Sync errors: ${syncResult.errors.join(', ')}`);
+      }
+    } catch (e) {
+      console.error('[pm_check] Failed to sync tickets from Jira, continuing with stale data:', e);
+    }
 
     // 1. Detect problematic engineers and create alert actions
     const alerts = this.pmService.createAlertsForProblematicEngineers();

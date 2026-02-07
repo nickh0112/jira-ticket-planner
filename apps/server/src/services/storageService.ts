@@ -421,22 +421,22 @@ class StorageService {
       const stmt = this.db.prepare(`
         UPDATE tickets
         SET title = ?, description = ?, assignee_id = ?,
-            status = ?, priority = ?, updated_at = ?
+            status = ?, priority = ?, jira_status = ?, updated_at = ?
         WHERE jira_key = ?
       `);
       stmt.run(data.title, data.description, data.assigneeId,
-               internalStatus, data.priority, new Date().toISOString(), data.jiraKey);
+               internalStatus, data.priority, data.status, new Date().toISOString(), data.jiraKey);
     } else {
       // Insert new ticket
       const id = uuidv4();
       const stmt = this.db.prepare(`
         INSERT INTO tickets (id, title, description, assignee_id, jira_key,
-                            status, priority, acceptance_criteria, ticket_type, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            status, priority, jira_status, acceptance_criteria, ticket_type, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       const now = new Date().toISOString();
       stmt.run(id, data.title, data.description, data.assigneeId, data.jiraKey,
-               internalStatus, data.priority, '[]', 'task', now, now);
+               internalStatus, data.priority, data.status, '[]', 'task', now, now);
     }
   }
 
@@ -456,6 +456,7 @@ class StorageService {
       createdInJira: Boolean(row.created_in_jira),
       jiraKey: row.jira_key ?? undefined,
       jiraUrl: row.jira_url ?? undefined,
+      jiraStatus: row.jira_status ?? undefined,
       featureGroupId: row.feature_group_id ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
