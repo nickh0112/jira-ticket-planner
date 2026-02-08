@@ -426,6 +426,31 @@ export class JiraService {
     };
   }
 
+  async createEpic(
+    config: JiraConfig,
+    epic: Epic
+  ): Promise<JiraCreateIssueResponse> {
+    const url = `${config.baseUrl}/rest/api/3/issue`;
+    const fields: Record<string, any> = {
+      project: { key: config.projectKey },
+      summary: epic.name,
+      issuetype: { name: 'Epic' },
+    };
+    if (epic.description) {
+      fields.description = {
+        type: 'doc',
+        version: 1,
+        content: [
+          { type: 'paragraph', content: [{ type: 'text', text: epic.description }] },
+        ],
+      };
+    }
+    return this.fetchWithRetry<JiraCreateIssueResponse>(url, {
+      method: 'POST',
+      body: JSON.stringify({ fields }),
+    });
+  }
+
   async createIssue(
     config: JiraConfig,
     ticket: Ticket,

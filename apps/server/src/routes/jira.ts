@@ -338,6 +338,61 @@ export function createJiraRouter(storage: ReturnType<typeof createStorageService
     }
   });
 
+  // Create an epic in Jira from a local epic
+  router.post('/epics/:id/create', async (req, res) => {
+    try {
+      const jiraService = createJiraService();
+      if (!jiraService) {
+        const response: ApiResponse<never> = {
+          success: false,
+          error: 'Jira credentials not configured. Set JIRA_EMAIL and JIRA_API_TOKEN environment variables.',
+        };
+        return res.status(400).json(response);
+      }
+
+      const config = storage.getJiraConfig();
+      if (!config) {
+        const response: ApiResponse<never> = {
+          success: false,
+          error: 'Jira configuration not set',
+        };
+        return res.status(400).json(response);
+      }
+
+      const epic = storage.getEpic(req.params.id);
+      if (!epic) {
+        const response: ApiResponse<never> = {
+          success: false,
+          error: 'Epic not found',
+        };
+        return res.status(404).json(response);
+      }
+
+      const jiraResponse = await jiraService.createEpic(config, epic);
+
+      // Update local epic key to the Jira key
+      const jiraUrl = `${config.baseUrl}/browse/${jiraResponse.key}`;
+      storage.updateEpic(epic.id, { key: jiraResponse.key });
+
+      const updatedEpic = storage.getEpic(epic.id);
+
+      const response: ApiResponse<{ epic: typeof updatedEpic; jira: JiraCreateIssueResponse }> = {
+        success: true,
+        data: {
+          epic: updatedEpic,
+          jira: jiraResponse,
+        },
+      };
+      res.json(response);
+    } catch (error) {
+      const response: ApiResponse<never> = {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create Jira epic',
+      };
+      res.status(500).json(response);
+    }
+  });
+
   // Create single Jira issue from ticket
   router.post('/tickets/:id/create', async (req, res) => {
     try {
