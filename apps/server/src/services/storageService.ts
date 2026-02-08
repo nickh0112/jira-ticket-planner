@@ -81,6 +81,8 @@ import type {
   SlackInsightType,
   SlackUserMapping,
   SlackSyncState,
+  CodebaseContext,
+  CodebaseContextListItem,
 } from '@jira-planner/shared';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -2365,9 +2367,9 @@ class StorageService {
         id, session_id, prd_id, title, description, acceptance_criteria,
         ticket_type, priority, layer, required_skills, suggested_assignee_id,
         suggested_epic_id, assignment_confidence, assignment_reasoning,
-        feature_group_id, created_at
+        feature_group_id, affected_files, implementation_hints, created_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       id,
@@ -2385,6 +2387,8 @@ class StorageService {
       input.assignmentConfidence ?? 0,
       input.assignmentReasoning ?? null,
       input.featureGroupId ?? null,
+      JSON.stringify(input.affectedFiles ?? []),
+      input.implementationHints ?? null,
       now
     );
     return this.getIdeaTicketProposal(id)!;
@@ -2478,6 +2482,14 @@ class StorageService {
       updates.push('created_ticket_id = ?');
       params.push(input.createdTicketId);
     }
+    if (input.affectedFiles !== undefined) {
+      updates.push('affected_files = ?');
+      params.push(JSON.stringify(input.affectedFiles));
+    }
+    if (input.implementationHints !== undefined) {
+      updates.push('implementation_hints = ?');
+      params.push(input.implementationHints);
+    }
 
     if (updates.length === 0) return existing;
 
@@ -2518,8 +2530,70 @@ class StorageService {
       status: row.status,
       createdTicketId: row.created_ticket_id ?? null,
       featureGroupId: row.feature_group_id ?? null,
+      affectedFiles: JSON.parse(row.affected_files || '[]'),
+      implementationHints: row.implementation_hints ?? undefined,
       createdAt: row.created_at,
     };
+  }
+
+  // ============================================================================
+  // Codebase Context Methods
+  // ============================================================================
+
+  createCodebaseContext(input: {
+    name: string;
+    rootPath: string;
+    analyzedAt: string;
+    totalFiles: number;
+    totalDirectories: number;
+    languageBreakdown: Record<string, number>;
+    contextSummary: string;
+    rawAnalysis: string;
+  }): CodebaseContext {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO codebase_contexts (id, name, root_path, analyzed_at, total_files, total_directories, language_breakdown, context_summary, raw_analysis, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(id, input.name, input.rootPath, input.analyzedAt, input.totalFiles, input.totalDirectories, JSON.stringify(input.languageBreakdown), input.contextSummary, input.rawAnalysis, now, now);
+    return this.getCodebaseContext(id)!;
+  }
+
+  getCodebaseContext(id: string): CodebaseContext | null {
+    const stmt = this.db.prepare('SELECT * FROM codebase_contexts WHERE id = ?');
+    const row = stmt.get(id) as any;
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      rootPath: row.root_path,
+      analyzedAt: row.analyzed_at,
+      totalFiles: row.total_files,
+      contextSummary: row.context_summary,
+      rawAnalysis: row.raw_analysis,
+      createdAt: row.created_at,
+    };
+  }
+
+  getCodebaseContexts(): CodebaseContextListItem[] {
+    const stmt = this.db.prepare('SELECT id, name, root_path, analyzed_at, total_files, language_breakdown, created_at FROM codebase_contexts ORDER BY created_at DESC');
+    const rows = stmt.all() as any[];
+    return rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      rootPath: row.root_path,
+      analyzedAt: row.analyzed_at,
+      totalFiles: row.total_files,
+      languageBreakdown: JSON.parse(row.language_breakdown || '{}'),
+      createdAt: row.created_at,
+    }));
+  }
+
+  deleteCodebaseContext(id: string): boolean {
+    const stmt = this.db.prepare('DELETE FROM codebase_contexts WHERE id = ?');
+    const result = stmt.run(id);
+    return result.changes > 0;
   }
 
   // ============================================================================

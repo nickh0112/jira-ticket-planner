@@ -15,6 +15,10 @@ export function ChatPanel() {
     generatePRD,
     generateTickets,
     clearError,
+    codebaseContexts,
+    selectedCodebaseContextId,
+    loadCodebaseContexts,
+    setSelectedCodebaseContext,
   } = useIdeasStore();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -23,6 +27,10 @@ export function ChatPanel() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentSession?.messages]);
+
+  useEffect(() => {
+    loadCodebaseContexts();
+  }, [loadCodebaseContexts]);
 
   if (!currentSession) return null;
 
@@ -111,6 +119,21 @@ export function ChatPanel() {
                 </>
               )}
             </button>
+          )}
+
+          {prd && proposals.length === 0 && codebaseContexts.length > 0 && (
+            <select
+              value={selectedCodebaseContextId || ''}
+              onChange={(e) => setSelectedCodebaseContext(e.target.value || null)}
+              className="text-sm bg-stone-700 border border-stone-600 rounded px-2 py-1.5 text-beige"
+            >
+              <option value="">No codebase context</option>
+              {codebaseContexts.map((ctx) => (
+                <option key={ctx.id} value={ctx.id}>
+                  {ctx.name} ({ctx.totalFiles} files)
+                </option>
+              ))}
+            </select>
           )}
 
           {prd && proposals.length === 0 && (

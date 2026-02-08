@@ -3,6 +3,7 @@ import type {
   IdeaSession,
   IdeaSessionFull,
   UpdateTicketProposalInput,
+  CodebaseContextListItem,
 } from '@jira-planner/shared';
 import {
   getIdeaSessions,
@@ -15,6 +16,8 @@ import {
   approveIdeaProposals as apiApproveProposals,
   rejectIdeaProposal as apiRejectProposal,
   updateIdeaProposal as apiUpdateProposal,
+  importIdeaPRD as apiImportPRD,
+  getCodebaseContexts as apiGetCodebaseContexts,
 } from '../utils/api';
 
 type ArtifactView = 'prd' | 'tickets' | 'none';
@@ -34,9 +37,14 @@ interface IdeasState {
   thinkingSteps: string[];
   selectedProposalIds: Set<string>;
 
+  // Codebase context
+  codebaseContexts: CodebaseContextListItem[];
+  selectedCodebaseContextId: string | null;
+
   // Actions
   loadSessions: () => Promise<void>;
   createSession: (title: string) => Promise<IdeaSession>;
+  importPRD: (title: string, markdown: string) => Promise<IdeaSession>;
   loadSession: (id: string) => Promise<void>;
   archiveSession: (id: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
@@ -45,6 +53,9 @@ interface IdeasState {
   approveProposals: (options?: { pushToJira?: boolean }) => Promise<void>;
   rejectProposal: (proposalId: string) => Promise<void>;
   updateProposal: (proposalId: string, updates: UpdateTicketProposalInput) => Promise<void>;
+
+  loadCodebaseContexts: () => Promise<void>;
+  setSelectedCodebaseContext: (id: string | null) => void;
 
   // UI Actions
   setArtifactView: (view: ArtifactView) => void;
@@ -69,6 +80,8 @@ export const useIdeasStore = create<IdeasState>((set, get) => ({
   sidebarOpen: true,
   thinkingSteps: [],
   selectedProposalIds: new Set(),
+  codebaseContexts: [],
+  selectedCodebaseContextId: null,
 
   // Load all sessions
   loadSessions: async () => {
@@ -93,6 +106,23 @@ export const useIdeasStore = create<IdeasState>((set, get) => ({
       // Load the full session
       await get().loadSession(session.id);
       return session;
+    } catch (error: any) {
+      set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  // Import a PRD from markdown
+  importPRD: async (title: string, markdown: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const result = await apiImportPRD(title, markdown);
+      set((state) => ({
+        sessions: [result.session, ...state.sessions],
+        isLoading: false,
+      }));
+      await get().loadSession(result.session.id);
+      return result.session;
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
       throw error;
@@ -213,7 +243,8 @@ export const useIdeasStore = create<IdeasState>((set, get) => ({
 
     set({ isGenerating: true, error: null });
     try {
-      const result = await apiGenerateTickets(currentSession.session.id);
+      const { selectedCodebaseContextId } = get();
+      const result = await apiGenerateTickets(currentSession.session.id, selectedCodebaseContextId ?? undefined);
 
       // Select all new proposals by default
       const newProposalIds = result.proposals.map(p => p.id);
@@ -312,6 +343,17 @@ export const useIdeasStore = create<IdeasState>((set, get) => ({
       set({ error: error.message });
     }
   },
+
+  loadCodebaseContexts: async () => {
+    try {
+      const contexts = await apiGetCodebaseContexts();
+      set({ codebaseContexts: contexts });
+    } catch (error: any) {
+      console.error('Failed to load codebase contexts:', error);
+    }
+  },
+
+  setSelectedCodebaseContext: (id: string | null) => set({ selectedCodebaseContextId: id }),
 
   // UI Actions
   setArtifactView: (view: ArtifactView) => set({ artifactView: view }),

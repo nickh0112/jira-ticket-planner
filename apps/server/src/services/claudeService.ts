@@ -1093,6 +1093,87 @@ Only return the JSON, no other text.`;
 }
 
 /**
+ * Parse an existing PRD from raw markdown content
+ */
+export async function parsePRDFromMarkdown(
+  rawMarkdown: string
+): Promise<PRDGenerationResponse> {
+  const systemPrompt = `You are a Product Manager parsing an existing PRD (Product Requirements Document) from markdown content.
+
+Parse and extract the following structured fields from the PRD:
+1. Problem Statement - What problem is being solved and why it matters
+2. Goals - 3-5 specific, measurable objectives
+3. User Stories - User stories in "As a [user], I want [feature] so that [benefit]" format
+4. Functional Requirements - Specific features and behaviors
+5. Non-Functional Requirements - Performance, security, scalability needs
+6. Success Metrics - How success will be measured
+7. Scope Boundaries - What's in scope vs out of scope
+8. Technical Considerations - Architecture notes, constraints, dependencies
+
+Response format (JSON):
+{
+  "prd": {
+    "title": "Feature/Product Name",
+    "problemStatement": "Clear problem description...",
+    "goals": ["Goal 1", "Goal 2", "Goal 3"],
+    "userStories": ["As a user, I want...", "As an admin, I want..."],
+    "functionalRequirements": ["Requirement 1", "Requirement 2"],
+    "nonFunctionalRequirements": "Performance targets, security requirements, etc.",
+    "successMetrics": "KPIs and metrics to track...",
+    "scopeBoundaries": {
+      "inScope": ["Feature A", "Feature B"],
+      "outOfScope": ["Future consideration X", "Not included Y"]
+    },
+    "technicalConsiderations": "Architecture notes, tech stack considerations..."
+  },
+  "summary": "Brief summary of what was captured in the PRD"
+}
+
+Only return the JSON, no other text.`;
+
+  const response = await getClient().messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 4096,
+    system: systemPrompt,
+    messages: [
+      {
+        role: 'user',
+        content: rawMarkdown,
+      },
+    ],
+  });
+
+  const content = response.content[0];
+  if (content.type !== 'text') {
+    throw new Error('Unexpected response type from Claude');
+  }
+
+  const result = parseJsonResponse(content.text);
+
+  const prd = result.prd;
+
+  return {
+    prd: {
+      sessionId: '', // Will be set by caller
+      title: String(prd.title || 'Imported PRD'),
+      problemStatement: String(prd.problemStatement || ''),
+      goals: Array.isArray(prd.goals) ? prd.goals.map(String) : [],
+      userStories: Array.isArray(prd.userStories) ? prd.userStories.map(String) : [],
+      functionalRequirements: Array.isArray(prd.functionalRequirements) ? prd.functionalRequirements.map(String) : [],
+      nonFunctionalRequirements: String(prd.nonFunctionalRequirements || ''),
+      successMetrics: String(prd.successMetrics || ''),
+      scopeBoundaries: {
+        inScope: Array.isArray(prd.scopeBoundaries?.inScope) ? prd.scopeBoundaries.inScope.map(String) : [],
+        outOfScope: Array.isArray(prd.scopeBoundaries?.outOfScope) ? prd.scopeBoundaries.outOfScope.map(String) : [],
+      },
+      technicalConsiderations: prd.technicalConsiderations ? String(prd.technicalConsiderations) : undefined,
+      rawContent: rawMarkdown,
+    },
+    summary: String(result.summary || 'PRD parsed successfully'),
+  };
+}
+
+/**
  * Update an existing PRD based on a user's change request
  */
 export async function updatePRDFromChat(
@@ -1159,7 +1240,8 @@ export async function splitPRDIntoTickets(
   prd: IdeaPRD,
   teamMembers: TeamMember[],
   epics: Epic[],
-  inferredSkills: InferredSkill[]
+  inferredSkills: InferredSkill[],
+  codebaseContext?: { contextSummary: string } | null
 ): Promise<TicketSplitResponse> {
   const teamInfo = teamMembers
     .map((m) => {
@@ -1172,6 +1254,8 @@ export async function splitPRDIntoTickets(
     .join('\n');
 
   const epicInfo = epics.map((e) => `- ${e.id}: ${e.name} - ${e.description}`).join('\n');
+
+  const codebaseSection = codebaseContext ? `\n\nCodebase Context:\nUse this to reference specific files/directories, identify existing modules to modify, suggest accurate file paths, and scope tickets based on actual architecture.\n\n${codebaseContext.contextSummary}` : '';
 
   const systemPrompt = `You are splitting a PRD into implementable tickets/tasks.
 
@@ -1204,7 +1288,7 @@ Team Members:
 ${teamInfo || 'None configured'}
 
 Available Epics:
-${epicInfo || 'None configured'}
+${epicInfo || 'None configured'}${codebaseSection}
 
 Response format (JSON):
 {
@@ -1221,7 +1305,9 @@ Response format (JSON):
       "suggestedEpicId": "uuid-or-null",
       "assignmentConfidence": 0.85,
       "assignmentReasoning": "Strong backend skills and auth experience",
-      "featureGroupId": "user-auth"
+      "featureGroupId": "user-auth",
+      "affectedFiles": ["src/services/authService.ts"],
+      "implementationHints": "Modify the existing UserController..."
     }
   ],
   "summary": "Created 5 tickets: 2 backend, 2 frontend, 1 design"
@@ -1272,6 +1358,8 @@ Only return the JSON, no other text.`;
       assignmentConfidence: Number(p.assignmentConfidence) || 0,
       assignmentReasoning: p.assignmentReasoning ? String(p.assignmentReasoning) : undefined,
       featureGroupId,
+      affectedFiles: Array.isArray(p.affectedFiles) ? p.affectedFiles.map(String) : undefined,
+      implementationHints: p.implementationHints ? String(p.implementationHints) : undefined,
     };
   });
 

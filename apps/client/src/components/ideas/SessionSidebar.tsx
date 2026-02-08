@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { useIdeasStore } from '../../store/ideasStore';
 import { SessionCard } from './SessionCard';
+import { ImportPRDModal } from './ImportPRDModal';
 
 export function SessionSidebar() {
   const {
@@ -12,6 +14,8 @@ export function SessionSidebar() {
     loadSession,
     archiveSession,
   } = useIdeasStore();
+
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const handleNewSession = async () => {
     const title = prompt('Name your idea:');
@@ -63,6 +67,13 @@ export function SessionSidebar() {
         >
           <span>⚒️</span>
           <span className="text-sm">Start Forging</span>
+        </button>
+        <button
+          onClick={() => setShowImportModal(true)}
+          className="w-full stone-button flex items-center justify-center gap-2 py-2 mt-2"
+        >
+          <span>📄</span>
+          <span className="text-sm">Import PRD</span>
         </button>
       </div>
 
@@ -118,6 +129,11 @@ export function SessionSidebar() {
           </div>
         </details>
       </div>
+
+      <ImportPRDModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+      />
     </div>
   );
 }

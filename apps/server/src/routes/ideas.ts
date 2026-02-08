@@ -42,6 +42,29 @@ export function createIdeasRouter(ideasService: IdeasService): Router {
     }
   });
 
+  // POST /api/ideas/import-prd - Import a PRD from markdown
+  router.post('/import-prd', async (req, res) => {
+    try {
+      const { title, markdown } = req.body;
+      if (!title || typeof title !== 'string') {
+        return res.status(400).json({ success: false, error: 'Title is required' });
+      }
+      if (!markdown || typeof markdown !== 'string' || markdown.length < 50) {
+        return res.status(400).json({ success: false, error: 'Markdown content is required (min 50 characters)' });
+      }
+
+      const result = await ideasService.importPRD(title, markdown);
+      const response: ApiResponse<typeof result> = { success: true, data: result };
+      res.status(201).json(response);
+    } catch (error: any) {
+      console.error('Error importing PRD:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to import PRD',
+      });
+    }
+  });
+
   // GET /api/ideas/:id - Get session with all data
   router.get('/:id', (req, res) => {
     try {
@@ -154,7 +177,8 @@ export function createIdeasRouter(ideasService: IdeasService): Router {
   // POST /api/ideas/:id/generate-tickets - Generate ticket proposals from PRD
   router.post('/:id/generate-tickets', async (req, res) => {
     try {
-      const result = await ideasService.generateTickets(req.params.id);
+      const { codebaseContextId } = req.body;
+      const result = await ideasService.generateTickets(req.params.id, codebaseContextId);
       const response: ApiResponse<typeof result> = { success: true, data: result };
       res.json(response);
     } catch (error: any) {

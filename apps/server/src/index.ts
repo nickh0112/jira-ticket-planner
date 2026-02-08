@@ -38,6 +38,7 @@ import { createAutomationRouter } from './routes/automation.js';
 import { createMeetingsRouter } from './routes/meetings.js';
 import { createReportsRouter } from './routes/reports.js';
 import { createSlackRouter } from './routes/slack.js';
+import { createCodebaseRouter } from './routes/codebase.js';
 import { createIdeasService } from './services/ideasService.js';
 import { AppError } from '@jira-planner/shared';
 
@@ -118,6 +119,7 @@ const app = express();
 
 // Middleware
 app.use(cors());
+app.use('/api/codebase-context', express.json({ limit: '50mb' }));
 app.use(express.json({ limit: '10mb' }));
 
 // Routes
@@ -133,6 +135,7 @@ app.use('/api/world', createWorldRouter(storage));
 app.use('/api/integrations', createIntegrationsRouter());
 app.use('/api/pm', createPMRouter(storage, pmService, automationEngine));
 app.use('/api/ideas', createIdeasRouter(ideasService));
+app.use('/api/codebase-context', createCodebaseRouter(storage));
 app.use('/api/settings', createSettingsRouter(storage));
 app.use('/api/bitbucket', createBitbucketRouter(storage, getBitbucketService, bitbucketSyncService));
 app.use('/api/automation', createAutomationRouter(storage, automationEngine, actionExecutor));

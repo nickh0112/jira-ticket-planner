@@ -4,6 +4,7 @@ import type { JiraService } from './jiraService.js';
 import {
   brainstormIdea,
   generatePRDFromConversation,
+  parsePRDFromMarkdown,
   updatePRDFromChat,
   splitPRDIntoTickets,
   updateTicketsFromChat,
@@ -73,6 +74,33 @@ class IdeasService {
 
   deleteSession(id: string): boolean {
     return this.storage.deleteIdeaSession(id);
+  }
+
+  async importPRD(title: string, rawMarkdown: string): Promise<{
+    session: IdeaSession;
+    prd: IdeaPRD;
+    message: IdeaMessage;
+  }> {
+    // 1. Call parsePRDFromMarkdown(rawMarkdown)
+    const result = await parsePRDFromMarkdown(rawMarkdown);
+
+    // 2. Create session
+    const session = this.storage.createIdeaSession({ title });
+
+    // 3. Create PRD (createIdeaPRD already sets session status to prd_generated)
+    const prd = this.storage.createIdeaPRD({
+      ...result.prd,
+      sessionId: session.id,
+    });
+
+    // 4. Create assistant message
+    const message = this.storage.createIdeaMessage({
+      sessionId: session.id,
+      role: 'assistant',
+      content: `I've imported your PRD as a Blueprint. ${result.summary}\n\nReview it in the panel on the right, then click "Generate Quests" when ready to create tickets.`,
+    });
+
+    return { session, prd, message };
   }
 
   // ============================================================================
@@ -250,7 +278,7 @@ class IdeasService {
   // Ticket Generation
   // ============================================================================
 
-  async generateTickets(sessionId: string): Promise<GenerateTicketsResponse> {
+  async generateTickets(sessionId: string, codebaseContextId?: string): Promise<GenerateTicketsResponse> {
     const session = this.storage.getIdeaSession(sessionId);
     if (!session) {
       throw new Error('Session not found');
@@ -266,8 +294,17 @@ class IdeasService {
     const epics = this.storage.getEpics();
     const inferredSkills = this.storage.getInferredSkills();
 
+    // Optionally fetch codebase context
+    let codebaseContext: { contextSummary: string } | null = null;
+    if (codebaseContextId) {
+      const ctx = this.storage.getCodebaseContext(codebaseContextId);
+      if (ctx) {
+        codebaseContext = { contextSummary: ctx.contextSummary };
+      }
+    }
+
     // Split PRD into tickets
-    const result = await splitPRDIntoTickets(prd, teamMembers, epics, inferredSkills);
+    const result = await splitPRDIntoTickets(prd, teamMembers, epics, inferredSkills, codebaseContext);
 
     // Create proposal records
     const proposals = this.storage.createIdeaTicketProposals(

@@ -181,6 +181,30 @@ export function TicketCard({ proposal, index }: TicketCardProps) {
             </div>
           )}
 
+          {/* Affected files */}
+          {proposal.affectedFiles && proposal.affectedFiles.length > 0 && (
+            <div>
+              <h5 className="text-xs font-medium text-beige/60 mb-1">Affected Files</h5>
+              <div className="bg-stone-800/50 rounded p-2 max-h-32 overflow-y-auto">
+                {proposal.affectedFiles.map((file, i) => (
+                  <div key={i} className="text-xs font-mono text-beige/70">
+                    {file}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Implementation hints */}
+          {proposal.implementationHints && (
+            <div>
+              <h5 className="text-xs font-medium text-beige/60 mb-1">Implementation Hints</h5>
+              <p className="text-sm text-beige/70 whitespace-pre-wrap bg-stone-800/50 rounded p-2">
+                {proposal.implementationHints}
+              </p>
+            </div>
+          )}
+
           {/* Actions (for proposed) */}
           {isProposed && (
             <div className="flex gap-2 pt-2">

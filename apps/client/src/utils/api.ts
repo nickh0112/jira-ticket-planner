@@ -46,6 +46,7 @@ import type {
   IdeaSession,
   IdeaSessionFull,
   IdeaPRD,
+  IdeaMessage,
   IdeaTicketProposal,
   SendMessageResponse,
   GeneratePRDResponse,
@@ -76,6 +77,8 @@ import type {
   SlackUserMapping,
   SlackSyncState,
   SlackTestConnectionResponse,
+  CodebaseContextListItem,
+  CodebaseContext,
 } from '@jira-planner/shared';
 
 const API_BASE = '/api';
@@ -736,9 +739,10 @@ export async function updateIdeaPRD(sessionId: string, updates: UpdateIdeaPRDInp
 }
 
 // Generate ticket proposals from PRD
-export async function generateIdeaTickets(sessionId: string): Promise<GenerateTicketsResponse> {
+export async function generateIdeaTickets(sessionId: string, codebaseContextId?: string): Promise<GenerateTicketsResponse> {
   return fetchApi<GenerateTicketsResponse>(`/ideas/${sessionId}/generate-tickets`, {
     method: 'POST',
+    body: JSON.stringify({ codebaseContextId }),
   });
 }
 
@@ -788,6 +792,39 @@ export async function syncTicketToJira(
 export async function rejectIdeaProposal(sessionId: string, proposalId: string): Promise<IdeaTicketProposal> {
   return fetchApi<IdeaTicketProposal>(`/ideas/${sessionId}/proposals/${proposalId}/reject`, {
     method: 'POST',
+  });
+}
+
+// Import a PRD from markdown
+export async function importIdeaPRD(title: string, markdown: string): Promise<{
+  session: IdeaSession;
+  prd: IdeaPRD;
+  message: IdeaMessage;
+}> {
+  return fetchApi<{ session: IdeaSession; prd: IdeaPRD; message: IdeaMessage }>('/ideas/import-prd', {
+    method: 'POST',
+    body: JSON.stringify({ title, markdown }),
+  });
+}
+
+// ============================================================================
+// Codebase Context API
+// ============================================================================
+
+export async function getCodebaseContexts(): Promise<CodebaseContextListItem[]> {
+  return fetchApi<CodebaseContextListItem[]>('/codebase-context');
+}
+
+export async function uploadCodebaseContext(analysis: any): Promise<CodebaseContext> {
+  return fetchApi<CodebaseContext>('/codebase-context', {
+    method: 'POST',
+    body: JSON.stringify(analysis),
+  });
+}
+
+export async function deleteCodebaseContext(id: string): Promise<{ deleted: true }> {
+  return fetchApi<{ deleted: true }>(`/codebase-context/${id}`, {
+    method: 'DELETE',
   });
 }
 

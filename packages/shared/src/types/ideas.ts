@@ -131,6 +131,8 @@ export interface IdeaTicketProposal {
   status: TicketProposalStatus;
   createdTicketId: string | null;
   featureGroupId: string | null;
+  affectedFiles?: string[];
+  implementationHints?: string;
   createdAt: string;
 }
 
@@ -149,6 +151,8 @@ export interface CreateTicketProposalInput {
   assignmentConfidence?: number;
   assignmentReasoning?: string;
   featureGroupId?: string;
+  affectedFiles?: string[];
+  implementationHints?: string;
 }
 
 export interface UpdateTicketProposalInput {
@@ -165,6 +169,8 @@ export interface UpdateTicketProposalInput {
   assignmentReasoning?: string | null;
   status?: TicketProposalStatus;
   createdTicketId?: string;
+  affectedFiles?: string[];
+  implementationHints?: string;
 }
 
 // ============================================================================

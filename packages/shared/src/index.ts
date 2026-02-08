@@ -7,6 +7,7 @@ export * from './types/agent.js';
 export * from './types/world.js';
 export * from './types/pm.js';
 export * from './types/ideas.js';
+export * from './types/codebase.js';
 export * from './types/settings.js';
 export * from './types/bitbucket.js';
 export * from './types/automation.js';
