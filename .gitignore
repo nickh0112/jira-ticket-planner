@@ -10,8 +10,10 @@ dist/
 
 # Database
 *.sqlite
+*.sqlite3
 *.sqlite-wal
 *.sqlite-shm
+apps/server/data/
 
 # IDE
 .vscode/
@@ -25,5 +27,12 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# Build artifacts
+*.tsbuildinfo
+
 # Testing
 coverage/
+
+# Stale ticket reports
+stale-tickets.py
+stale-reports/
