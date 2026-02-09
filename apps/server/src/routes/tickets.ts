@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type {
   ApiResponse,
   TicketListResponse,
+  CreateTicketInput,
   UpdateTicketInput,
   StatusUpdateRequest,
   Ticket,
@@ -11,6 +12,32 @@ import type { createStorageService } from '../services/storageService.js';
 
 export function createTicketsRouter(storage: ReturnType<typeof createStorageService>) {
   const router = Router();
+
+  // Create ticket
+  router.post('/', (req, res) => {
+    try {
+      const input = req.body as CreateTicketInput;
+      if (!input.title || !input.description) {
+        const response: ApiResponse<never> = {
+          success: false,
+          error: 'Title and description are required',
+        };
+        return res.status(400).json(response);
+      }
+      const ticket = storage.createTicket(input);
+      const response: ApiResponse<Ticket> = {
+        success: true,
+        data: ticket,
+      };
+      res.status(201).json(response);
+    } catch (error) {
+      const response: ApiResponse<never> = {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create ticket',
+      };
+      res.status(500).json(response);
+    }
+  });
 
   // List tickets with optional filters
   router.get('/', (req, res) => {
