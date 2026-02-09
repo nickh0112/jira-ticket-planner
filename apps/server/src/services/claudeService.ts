@@ -1508,3 +1508,116 @@ ${prd.technicalConsiderations || 'To be defined'}
 *Created: ${new Date().toISOString().split('T')[0]}*
 `;
 }
+
+// ============================================================================
+// Design Prototyping Feature
+// ============================================================================
+
+export interface DesignConversationContext {
+  currentPrototype?: string;
+  sourceDetails?: string;
+  codebaseContext?: string;
+}
+
+export interface DesignPrototypeContext {
+  sessionTitle: string;
+  conversationSummary: string;
+  sourceDetails?: string;
+  codebaseContext?: string;
+}
+
+/**
+ * Carry on a design conversation with the user
+ */
+export async function designConversation(
+  messages: { role: string; content: string }[],
+  context: DesignConversationContext
+): Promise<{ message: string }> {
+  const { currentPrototype, sourceDetails, codebaseContext } = context;
+
+  const systemPrompt = `You are a senior product designer working with a development team.
+You have access to the following context:
+
+${sourceDetails ? `Source Context:\n${sourceDetails}\n` : ''}
+${codebaseContext ? `Codebase & Design System:\n${codebaseContext}\n` : ''}
+${currentPrototype ? `Current Prototype:\n\`\`\`tsx\n${currentPrototype}\n\`\`\`\n` : ''}
+
+Help the user think through the design. Ask clarifying questions about user flows, edge cases, and visual hierarchy. When ready or when asked, generate a production-quality React component using Tailwind CSS.
+
+When generating or updating a component, output it in a single \`\`\`tsx code block. The component should:
+- Be a self-contained functional component with no external dependencies beyond React + Tailwind
+- Use modern React patterns (hooks, composition)
+- Be responsive (mobile-first)
+- Use proper semantic HTML and accessibility
+- Include realistic placeholder data
+- Export as default`;
+
+  const conversationHistory = messages.map((m) => ({
+    role: m.role as 'user' | 'assistant',
+    content: m.content,
+  }));
+
+  const response = await callClaudeWithRetry({
+    max_tokens: 8192,
+    system: systemPrompt,
+    messages: conversationHistory,
+  });
+
+  const content = response.content[0];
+  if (content.type !== 'text') {
+    return { message: 'I encountered an error processing your message. Please try again.' };
+  }
+
+  return { message: content.text.trim() };
+}
+
+/**
+ * Generate a full design prototype from conversation context
+ */
+export async function generateDesignPrototype(
+  context: DesignPrototypeContext
+): Promise<{ name: string; description: string; componentCode: string }> {
+  const { sessionTitle, conversationSummary, sourceDetails, codebaseContext } = context;
+
+  const systemPrompt = `Generate a production-quality React component with Tailwind CSS.
+
+Context:
+- Design: ${sessionTitle}
+- Conversation: ${conversationSummary}
+${sourceDetails ? `- Source: ${sourceDetails}` : ''}
+${codebaseContext ? `- Codebase patterns: ${codebaseContext}` : ''}
+
+Requirements:
+- Self-contained functional component (no external dependencies beyond React + Tailwind)
+- Modern React patterns (hooks, composition)
+- Responsive design (mobile-first)
+- Proper semantic HTML and accessibility (aria labels, keyboard nav)
+- Include realistic placeholder data
+- Export as default component
+
+Respond with a JSON object: { "name": "ComponentName", "description": "Brief description", "code": "...full component code..." }`;
+
+  const response = await callClaudeWithRetry({
+    max_tokens: 16384,
+    system: systemPrompt,
+    messages: [
+      {
+        role: 'user',
+        content: 'Generate the prototype component based on our conversation.',
+      },
+    ],
+  });
+
+  const content = response.content[0];
+  if (content.type !== 'text') {
+    throw new Error('Unexpected response type from Claude');
+  }
+
+  const result = parseJsonResponse(content.text);
+
+  return {
+    name: String(result.name || 'DesignPrototype'),
+    description: String(result.description || ''),
+    componentCode: String(result.code || ''),
+  };
+}

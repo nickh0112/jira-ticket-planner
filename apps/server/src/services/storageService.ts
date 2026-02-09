@@ -83,6 +83,14 @@ import type {
   SlackSyncState,
   CodebaseContext,
   CodebaseContextListItem,
+  DesignSession,
+  CreateDesignSessionInput,
+  UpdateDesignSessionInput,
+  DesignMessage,
+  CreateDesignMessageInput,
+  DesignPrototype,
+  CreateDesignPrototypeInput,
+  DesignSessionFull,
 } from '@jira-planner/shared';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -4629,6 +4637,209 @@ class StorageService {
   updateTicketJiraSyncedAt(ticketId: string): void {
     const stmt = this.db.prepare("UPDATE tickets SET jira_synced_at = datetime('now') WHERE id = ?");
     stmt.run(ticketId);
+  }
+
+  // ============================================================================
+  // Design Session Methods
+  // ============================================================================
+
+  createDesignSession(input: CreateDesignSessionInput): DesignSession {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO design_sessions (id, title, source_type, source_id, codebase_context_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(id, input.title, input.sourceType || 'freeform', input.sourceId || null, input.codebaseContextId || null, now, now);
+    return this.getDesignSession(id)!;
+  }
+
+  getDesignSession(id: string): DesignSession | null {
+    const stmt = this.db.prepare('SELECT * FROM design_sessions WHERE id = ?');
+    const row = stmt.get(id) as any;
+    return row ? this.mapDesignSessionRow(row) : null;
+  }
+
+  getDesignSessions(filters?: { status?: string }): DesignSession[] {
+    let query = 'SELECT * FROM design_sessions WHERE 1=1';
+    const params: any[] = [];
+
+    if (filters?.status) {
+      query += ' AND status = ?';
+      params.push(filters.status);
+    }
+
+    query += ' ORDER BY updated_at DESC';
+
+    const stmt = this.db.prepare(query);
+    const rows = stmt.all(...params) as any[];
+    return rows.map(this.mapDesignSessionRow);
+  }
+
+  updateDesignSession(id: string, input: UpdateDesignSessionInput): DesignSession | null {
+    const existing = this.getDesignSession(id);
+    if (!existing) return null;
+
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (input.title !== undefined) {
+      updates.push('title = ?');
+      params.push(input.title);
+    }
+    if (input.status !== undefined) {
+      updates.push('status = ?');
+      params.push(input.status);
+    }
+    if (input.codebaseContextId !== undefined) {
+      updates.push('codebase_context_id = ?');
+      params.push(input.codebaseContextId);
+    }
+
+    if (updates.length === 0) return existing;
+
+    updates.push('updated_at = ?');
+    params.push(new Date().toISOString());
+    params.push(id);
+
+    const stmt = this.db.prepare(`UPDATE design_sessions SET ${updates.join(', ')} WHERE id = ?`);
+    stmt.run(...params);
+    return this.getDesignSession(id);
+  }
+
+  deleteDesignSession(id: string): boolean {
+    const stmt = this.db.prepare('DELETE FROM design_sessions WHERE id = ?');
+    const result = stmt.run(id);
+    return result.changes > 0;
+  }
+
+  getDesignSessionFull(id: string): DesignSessionFull | null {
+    const session = this.getDesignSession(id);
+    if (!session) return null;
+
+    return {
+      session,
+      messages: this.getDesignMessages(id),
+      prototypes: this.getDesignPrototypes(id),
+    };
+  }
+
+  private mapDesignSessionRow(row: any): DesignSession {
+    return {
+      id: row.id,
+      title: row.title,
+      sourceType: row.source_type,
+      sourceId: row.source_id ?? null,
+      status: row.status,
+      codebaseContextId: row.codebase_context_id ?? null,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  // ============================================================================
+  // Design Message Methods
+  // ============================================================================
+
+  createDesignMessage(input: CreateDesignMessageInput): DesignMessage {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const stmt = this.db.prepare(`
+      INSERT INTO design_messages (id, session_id, role, content, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    stmt.run(id, input.sessionId, input.role, input.content, now);
+
+    // Update session updated_at
+    this.db.prepare('UPDATE design_sessions SET updated_at = ? WHERE id = ?')
+      .run(now, input.sessionId);
+
+    return this.getDesignMessage(id)!;
+  }
+
+  getDesignMessage(id: string): DesignMessage | null {
+    const stmt = this.db.prepare('SELECT * FROM design_messages WHERE id = ?');
+    const row = stmt.get(id) as any;
+    return row ? this.mapDesignMessageRow(row) : null;
+  }
+
+  getDesignMessages(sessionId: string): DesignMessage[] {
+    const stmt = this.db.prepare(
+      'SELECT * FROM design_messages WHERE session_id = ? ORDER BY created_at ASC'
+    );
+    const rows = stmt.all(sessionId) as any[];
+    return rows.map(this.mapDesignMessageRow);
+  }
+
+  private mapDesignMessageRow(row: any): DesignMessage {
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      role: row.role,
+      content: row.content,
+      createdAt: row.created_at,
+    };
+  }
+
+  // ============================================================================
+  // Design Prototype Methods
+  // ============================================================================
+
+  createDesignPrototype(input: CreateDesignPrototypeInput): DesignPrototype {
+    const id = uuidv4();
+    const now = new Date().toISOString();
+
+    // Auto-increment version per session
+    const lastVersion = this.db.prepare(
+      'SELECT MAX(version) as max_version FROM design_prototypes WHERE session_id = ?'
+    ).get(input.sessionId) as any;
+    const version = input.version || ((lastVersion?.max_version || 0) + 1);
+
+    const stmt = this.db.prepare(`
+      INSERT INTO design_prototypes (id, session_id, name, description, component_code, version, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(id, input.sessionId, input.name, input.description || '', input.componentCode, version, now);
+
+    // Update session updated_at and status
+    this.db.prepare('UPDATE design_sessions SET updated_at = ?, status = ? WHERE id = ?')
+      .run(now, 'prototype_generated', input.sessionId);
+
+    return this.getDesignPrototype(id)!;
+  }
+
+  getDesignPrototype(id: string): DesignPrototype | null {
+    const stmt = this.db.prepare('SELECT * FROM design_prototypes WHERE id = ?');
+    const row = stmt.get(id) as any;
+    return row ? this.mapDesignPrototypeRow(row) : null;
+  }
+
+  getDesignPrototypes(sessionId: string): DesignPrototype[] {
+    const stmt = this.db.prepare(
+      'SELECT * FROM design_prototypes WHERE session_id = ? ORDER BY version ASC'
+    );
+    const rows = stmt.all(sessionId) as any[];
+    return rows.map(this.mapDesignPrototypeRow);
+  }
+
+  getLatestDesignPrototype(sessionId: string): DesignPrototype | null {
+    const stmt = this.db.prepare(
+      'SELECT * FROM design_prototypes WHERE session_id = ? ORDER BY version DESC LIMIT 1'
+    );
+    const row = stmt.get(sessionId) as any;
+    return row ? this.mapDesignPrototypeRow(row) : null;
+  }
+
+  private mapDesignPrototypeRow(row: any): DesignPrototype {
+    return {
+      id: row.id,
+      sessionId: row.session_id,
+      name: row.name,
+      description: row.description,
+      componentCode: row.component_code,
+      version: row.version,
+      createdAt: row.created_at,
+    };
   }
 
   close() {

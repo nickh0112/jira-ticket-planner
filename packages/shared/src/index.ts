@@ -9,6 +9,7 @@ export * from './types/pm.js';
 export * from './types/ideas.js';
 export * from './types/codebase.js';
 export * from './types/settings.js';
+export * from './types/design.js';
 export * from './types/bitbucket.js';
 export * from './types/automation.js';
 export * from './types/meetings.js';

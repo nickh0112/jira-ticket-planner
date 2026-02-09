@@ -19,7 +19,7 @@ interface AppState {
   error: string | null;
   statusFilter: TicketStatus | 'all';
   editingTicket: Ticket | null;
-  activeTab: 'tickets' | 'team' | 'epics' | 'settings' | 'agent' | 'world' | 'pm' | 'ideas' | 'dev' | 'engine' | 'reports' | 'meetings';
+  activeTab: 'tickets' | 'team' | 'epics' | 'settings' | 'agent' | 'world' | 'pm' | 'ideas' | 'design' | 'dev' | 'engine' | 'reports' | 'meetings';
   toast: { message: string; type: 'success' | 'error' } | null;
   selectedMemberId: string | null;
   selectedTicketKey: string | null;
@@ -42,7 +42,7 @@ interface AppState {
   setError: (error: string | null) => void;
   setStatusFilter: (filter: TicketStatus | 'all') => void;
   setEditingTicket: (ticket: Ticket | null) => void;
-  setActiveTab: (tab: 'tickets' | 'team' | 'epics' | 'settings' | 'agent' | 'world' | 'pm' | 'ideas' | 'dev' | 'engine' | 'reports' | 'meetings') => void;
+  setActiveTab: (tab: 'tickets' | 'team' | 'epics' | 'settings' | 'agent' | 'world' | 'pm' | 'ideas' | 'design' | 'dev' | 'engine' | 'reports' | 'meetings') => void;
   showToast: (message: string, type: 'success' | 'error') => void;
   hideToast: () => void;
   setSelectedMemberId: (id: string | null) => void;

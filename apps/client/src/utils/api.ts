@@ -79,6 +79,13 @@ import type {
   SlackTestConnectionResponse,
   CodebaseContextListItem,
   CodebaseContext,
+  DesignSession,
+  DesignSessionFull,
+  DesignSendMessageResponse,
+  GeneratePrototypeResponse,
+  DesignListResponse,
+  ShareDesignResponse,
+  UpdateDesignSessionInput,
 } from '@jira-planner/shared';
 
 const API_BASE = '/api';
@@ -1219,5 +1226,64 @@ export async function updateSlackUserMapping(
   return fetchApi<SlackUserMapping>(`/slack/user-mappings/${slackUserId}`, {
     method: 'PUT',
     body: JSON.stringify({ teamMemberId }),
+  });
+}
+
+// ============================================================================
+// Design API
+// ============================================================================
+
+export async function getDesignSessions(status?: string): Promise<DesignListResponse> {
+  const params = status ? `?status=${status}` : '';
+  return fetchApi<DesignListResponse>(`/design${params}`);
+}
+
+export async function createDesignSession(title: string, sourceType?: string, sourceId?: string, codebaseContextId?: string): Promise<DesignSession> {
+  return fetchApi<DesignSession>('/design', {
+    method: 'POST',
+    body: JSON.stringify({ title, sourceType, sourceId, codebaseContextId }),
+  });
+}
+
+export async function getDesignSession(id: string): Promise<DesignSessionFull> {
+  return fetchApi<DesignSessionFull>(`/design/${id}`);
+}
+
+export async function updateDesignSession(id: string, updates: UpdateDesignSessionInput): Promise<DesignSession> {
+  return fetchApi<DesignSession>(`/design/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  });
+}
+
+export async function archiveDesignSession(id: string): Promise<{ archived: true }> {
+  return fetchApi<{ archived: true }>(`/design/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function sendDesignMessage(sessionId: string, content: string): Promise<DesignSendMessageResponse> {
+  return fetchApi<DesignSendMessageResponse>(`/design/${sessionId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  });
+}
+
+export async function generateDesignPrototype(sessionId: string): Promise<GeneratePrototypeResponse> {
+  return fetchApi<GeneratePrototypeResponse>(`/design/${sessionId}/generate-prototype`, {
+    method: 'POST',
+  });
+}
+
+export async function approveDesign(sessionId: string): Promise<DesignSession> {
+  return fetchApi<DesignSession>(`/design/${sessionId}/approve`, {
+    method: 'PUT',
+  });
+}
+
+export async function shareDesign(sessionId: string, method: 'code' | 'jira'): Promise<ShareDesignResponse> {
+  return fetchApi<ShareDesignResponse>(`/design/${sessionId}/share`, {
+    method: 'POST',
+    body: JSON.stringify({ method }),
   });
 }

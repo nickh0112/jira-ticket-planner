@@ -32,6 +32,7 @@ import { createWorldRouter, createTeamExtensionRouter } from './routes/world.js'
 import { createIntegrationsRouter } from './routes/integrations.js';
 import { createPMRouter } from './routes/pm.js';
 import { createIdeasRouter } from './routes/ideas.js';
+import { createDesignRouter } from './routes/design.js';
 import { createSettingsRouter } from './routes/settings.js';
 import { createBitbucketRouter } from './routes/bitbucket.js';
 import { createAutomationRouter } from './routes/automation.js';
@@ -40,6 +41,7 @@ import { createReportsRouter } from './routes/reports.js';
 import { createSlackRouter } from './routes/slack.js';
 import { createCodebaseRouter } from './routes/codebase.js';
 import { createIdeasService } from './services/ideasService.js';
+import { createDesignService } from './services/designService.js';
 import { AppError } from '@jira-planner/shared';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -72,6 +74,9 @@ const pmService = createPMService({ storage, agentService, jiraService });
 
 // Initialize Ideas service
 const ideasService = createIdeasService({ storage, agentService, jiraService });
+
+// Initialize Design service
+const designService = createDesignService({ storage, jiraService });
 
 // Initialize Meeting service
 const meetingService = createMeetingService(storage, jiraService);
@@ -135,6 +140,7 @@ app.use('/api/world', createWorldRouter(storage));
 app.use('/api/integrations', createIntegrationsRouter());
 app.use('/api/pm', createPMRouter(storage, pmService, automationEngine));
 app.use('/api/ideas', createIdeasRouter(ideasService));
+app.use('/api/design', createDesignRouter(designService));
 app.use('/api/codebase-context', createCodebaseRouter(storage));
 app.use('/api/settings', createSettingsRouter(storage));
 app.use('/api/bitbucket', createBitbucketRouter(storage, getBitbucketService, bitbucketSyncService));

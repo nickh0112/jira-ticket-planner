@@ -16,6 +16,7 @@ import { RTSWorldView } from './components/rts/RTSWorldView';
 import { PMDashboard } from './components/PMDashboard';
 import { MemberDetailPage } from './components/MemberDetailPage';
 import { IdeasTab } from './components/ideas/IdeasTab';
+import { DesignTab } from './components/design/DesignTab';
 import { DevActivityTab } from './components/DevActivity';
 import { AutomationDashboard } from './components/AutomationDashboard';
 import { MeetingNotesProcessor } from './components/MeetingNotesProcessor';
@@ -26,6 +27,7 @@ import { getTickets, getTeamMembers, getEpics } from './utils/api';
 const tabs = [
   { key: 'tickets' as const, label: 'Quests', icon: '📜' },
   { key: 'ideas' as const, label: 'Forge', icon: '🧠' },
+  { key: 'design' as const, label: 'Design', icon: '🎨' },
   { key: 'team' as const, label: 'Squad', icon: '⚔️' },
   { key: 'epics' as const, label: 'Campaigns', icon: '🏰' },
   { key: 'world' as const, label: 'World', icon: '🗺️' },
@@ -72,7 +74,7 @@ export default function App() {
   }, [setTickets, setTeamMembers, setEpics, setIsLoading, showToast]);
 
   return (
-    <div className={`bg-stone-primary ${activeTab === 'ideas' ? 'h-screen flex flex-col overflow-hidden' : 'min-h-screen'}`}>
+    <div className={`bg-stone-primary ${activeTab === 'ideas' || activeTab === 'design' ? 'h-screen flex flex-col overflow-hidden' : 'min-h-screen'}`}>
       {/* Command Center Header - Compact */}
       <header className="bg-stone-secondary border-b-4 border-border-gold shadow-pixel flex-shrink-0">
         <div className="px-4 py-2">
@@ -99,8 +101,11 @@ export default function App() {
       {/* Ideas Tab - Full Width (rendered outside main) */}
       {activeTab === 'ideas' && <IdeasTab />}
 
-      {/* Main Content - Only render when not on ideas tab */}
-      {activeTab !== 'ideas' && (
+      {/* Design Tab - Full Width (rendered outside main) */}
+      {activeTab === 'design' && <DesignTab />}
+
+      {/* Main Content - Only render when not on full-width tabs */}
+      {activeTab !== 'ideas' && activeTab !== 'design' && (
         <main className="max-w-6xl mx-auto px-4 py-6">
           {activeTab === 'tickets' && (
             <div className="space-y-6">
