@@ -79,13 +79,14 @@ class DesignService {
 
     // Build source details
     const sourceDetails = this.getSourceDetails(session.sourceType, session.sourceId);
-    const codebaseContext = this.getCodebaseContextSummary(session.codebaseContextId);
+    const { summary: codebaseContext, design: designContext } = this.getCodebaseContextData(session.codebaseContextId);
 
     // Call Claude
     const response = await designConversation(messages, {
       currentPrototype: latestPrototype?.componentCode,
       sourceDetails,
       codebaseContext,
+      designContext,
     });
 
     // Auto-extract tsx/jsx code blocks from response
@@ -126,7 +127,7 @@ class DesignService {
 
     const messages = this.storage.getDesignMessages(sessionId);
     const sourceDetails = this.getSourceDetails(session.sourceType, session.sourceId);
-    const codebaseContext = this.getCodebaseContextSummary(session.codebaseContextId);
+    const { summary: codebaseContext, design: designContext } = this.getCodebaseContextData(session.codebaseContextId);
 
     // Build conversation summary from messages
     const conversationSummary = messages
@@ -138,6 +139,7 @@ class DesignService {
       conversationSummary,
       sourceDetails,
       codebaseContext,
+      designContext,
     });
 
     // Store prototype
@@ -244,19 +246,22 @@ class DesignService {
     return undefined;
   }
 
-  private getCodebaseContextSummary(codebaseContextId: string | null): string | undefined {
-    if (!codebaseContextId) return undefined;
+  private getCodebaseContextData(codebaseContextId: string | null): { summary?: string; design?: string } {
+    if (!codebaseContextId) return {};
 
     try {
       const ctx = this.storage.getCodebaseContext(codebaseContextId);
       if (ctx) {
-        return ctx.contextSummary;
+        return {
+          summary: ctx.contextSummary,
+          design: ctx.designContext ?? undefined,
+        };
       }
     } catch {
       // Context not found
     }
 
-    return undefined;
+    return {};
   }
 
   private extractCodeBlock(content: string): string | null {

@@ -1517,6 +1517,7 @@ export interface DesignConversationContext {
   currentPrototype?: string;
   sourceDetails?: string;
   codebaseContext?: string;
+  designContext?: string;
 }
 
 export interface DesignPrototypeContext {
@@ -1524,6 +1525,7 @@ export interface DesignPrototypeContext {
   conversationSummary: string;
   sourceDetails?: string;
   codebaseContext?: string;
+  designContext?: string;
 }
 
 /**
@@ -1533,13 +1535,14 @@ export async function designConversation(
   messages: { role: string; content: string }[],
   context: DesignConversationContext
 ): Promise<{ message: string }> {
-  const { currentPrototype, sourceDetails, codebaseContext } = context;
+  const { currentPrototype, sourceDetails, codebaseContext, designContext } = context;
 
   const systemPrompt = `You are a senior product designer working with a development team.
 You have access to the following context:
 
 ${sourceDetails ? `Source Context:\n${sourceDetails}\n` : ''}
 ${codebaseContext ? `Codebase & Design System:\n${codebaseContext}\n` : ''}
+${designContext ? `Design System Reference:\n${designContext}\nIMPORTANT: Match the design patterns above. Use the exact colors, typography, and component conventions from this design system. Prefer inline hex values or CSS custom properties over custom Tailwind class names for colors.\n` : ''}
 ${currentPrototype ? `Current Prototype:\n\`\`\`tsx\n${currentPrototype}\n\`\`\`\n` : ''}
 
 Help the user think through the design. Ask clarifying questions about user flows, edge cases, and visual hierarchy. When ready or when asked, generate a production-quality React component using Tailwind CSS.
@@ -1577,7 +1580,7 @@ When generating or updating a component, output it in a single \`\`\`tsx code bl
 export async function generateDesignPrototype(
   context: DesignPrototypeContext
 ): Promise<{ name: string; description: string; componentCode: string }> {
-  const { sessionTitle, conversationSummary, sourceDetails, codebaseContext } = context;
+  const { sessionTitle, conversationSummary, sourceDetails, codebaseContext, designContext } = context;
 
   const systemPrompt = `Generate a production-quality React component with Tailwind CSS.
 
@@ -1586,6 +1589,7 @@ Context:
 - Conversation: ${conversationSummary}
 ${sourceDetails ? `- Source: ${sourceDetails}` : ''}
 ${codebaseContext ? `- Codebase patterns: ${codebaseContext}` : ''}
+${designContext ? `\nDesign System Reference:\n${designContext}\nIMPORTANT: Match the design patterns above. Use the exact colors, typography, and component conventions from this design system. Prefer inline hex values or CSS custom properties over custom Tailwind class names for colors.` : ''}
 
 Requirements:
 - Self-contained functional component (no external dependencies beyond React + Tailwind)

@@ -25,6 +25,7 @@ export interface CodebaseContext {
   analyzedAt: string;
   totalFiles: number;
   contextSummary: string;
+  designContext?: string | null;
   rawAnalysis: string;
   createdAt: string;
 }

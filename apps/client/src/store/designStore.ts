@@ -9,6 +9,7 @@ import {
   generateDesignPrototype as apiGeneratePrototype,
   approveDesign as apiApprove,
   shareDesign as apiShare,
+  getCodebaseContext,
 } from '../utils/api';
 
 type ArtifactView = 'preview' | 'code' | 'none';
@@ -17,6 +18,7 @@ interface DesignState {
   // Data
   sessions: DesignSession[];
   currentSession: DesignSessionFull | null;
+  designCSS: string | null;
 
   // UI State
   isLoading: boolean;
@@ -48,6 +50,7 @@ export const useDesignStore = create<DesignState>((set, get) => ({
   // Initial state
   sessions: [],
   currentSession: null,
+  designCSS: null,
   isLoading: false,
   isSending: false,
   isGenerating: false,
@@ -96,8 +99,30 @@ export const useDesignStore = create<DesignState>((set, get) => ({
         artifactView = 'preview';
       }
 
+      // Fetch design context CSS if session is linked to a codebase
+      let designCSS: string | null = null;
+      if (sessionFull.session.codebaseContextId) {
+        try {
+          const ctx = await getCodebaseContext(sessionFull.session.codebaseContextId);
+          if (ctx.designContext) {
+            // Extract CSS custom properties from design context
+            const cssLines: string[] = [];
+            const propMatches = ctx.designContext.matchAll(/\s+(--[\w-]+):\s*(.+)/g);
+            for (const m of propMatches) {
+              cssLines.push(`  ${m[1]}: ${m[2]};`);
+            }
+            if (cssLines.length > 0) {
+              designCSS = cssLines.join('\n');
+            }
+          }
+        } catch {
+          // Codebase context fetch failed, continue without design CSS
+        }
+      }
+
       set({
         currentSession: sessionFull,
+        designCSS,
         artifactView,
         isLoading: false,
       });
@@ -220,6 +245,7 @@ export const useDesignStore = create<DesignState>((set, get) => ({
 
   clearCurrentSession: () => set({
     currentSession: null,
+    designCSS: null,
     artifactView: 'none',
   }),
 

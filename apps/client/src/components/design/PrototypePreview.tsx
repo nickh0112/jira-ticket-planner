@@ -1,8 +1,9 @@
 interface PrototypePreviewProps {
   code: string;
+  designCSS?: string;
 }
 
-export function PrototypePreview({ code }: PrototypePreviewProps) {
+export function PrototypePreview({ code, designCSS }: PrototypePreviewProps) {
   // Strip export default and capture the component for rendering
   const processedCode = code
     .replace(/export\s+default\s+function\s+(\w+)/g, 'function $1')
@@ -18,6 +19,7 @@ export function PrototypePreview({ code }: PrototypePreviewProps) {
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"><\/script>
   <script src="https://cdn.tailwindcss.com"><\/script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"><\/script>
+  ${designCSS ? `<style>\n:root {\n${designCSS}\n}\n<\/style>` : ''}
   <style>body { margin: 0; font-family: system-ui, sans-serif; }</style>
 </head>
 <body>

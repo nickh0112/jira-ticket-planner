@@ -2556,15 +2556,16 @@ class StorageService {
     totalDirectories: number;
     languageBreakdown: Record<string, number>;
     contextSummary: string;
+    designContext?: string;
     rawAnalysis: string;
   }): CodebaseContext {
     const id = uuidv4();
     const now = new Date().toISOString();
     const stmt = this.db.prepare(`
-      INSERT INTO codebase_contexts (id, name, root_path, analyzed_at, total_files, total_directories, language_breakdown, context_summary, raw_analysis, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO codebase_contexts (id, name, root_path, analyzed_at, total_files, total_directories, language_breakdown, context_summary, design_context, raw_analysis, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(id, input.name, input.rootPath, input.analyzedAt, input.totalFiles, input.totalDirectories, JSON.stringify(input.languageBreakdown), input.contextSummary, input.rawAnalysis, now, now);
+    stmt.run(id, input.name, input.rootPath, input.analyzedAt, input.totalFiles, input.totalDirectories, JSON.stringify(input.languageBreakdown), input.contextSummary, input.designContext ?? null, input.rawAnalysis, now, now);
     return this.getCodebaseContext(id)!;
   }
 
@@ -2579,6 +2580,7 @@ class StorageService {
       analyzedAt: row.analyzed_at,
       totalFiles: row.total_files,
       contextSummary: row.context_summary,
+      designContext: row.design_context ?? null,
       rawAnalysis: row.raw_analysis,
       createdAt: row.created_at,
     };

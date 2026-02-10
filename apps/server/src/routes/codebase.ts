@@ -35,7 +35,7 @@ export function createCodebaseRouter(storage: StorageService): Router {
   // POST /api/codebase-context - Ingest analysis
   router.post('/', (req, res) => {
     try {
-      const { name, rootPath, analyzedAt, totalFiles, totalDirectories, languageBreakdown, contextSummary, rawAnalysis } = req.body;
+      const { name, rootPath, analyzedAt, totalFiles, totalDirectories, languageBreakdown, contextSummary, designContext, rawAnalysis } = req.body;
       if (!name || !rootPath || !contextSummary) {
         return res.status(400).json({ success: false, error: 'name, rootPath, and contextSummary are required' });
       }
@@ -48,6 +48,7 @@ export function createCodebaseRouter(storage: StorageService): Router {
         totalDirectories: totalDirectories || 0,
         languageBreakdown: languageBreakdown || {},
         contextSummary,
+        designContext: typeof designContext === 'string' ? designContext : undefined,
         rawAnalysis: typeof rawAnalysis === 'string' ? rawAnalysis : JSON.stringify(rawAnalysis || {}),
       });
 

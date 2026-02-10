@@ -5,7 +5,7 @@ import { PrototypeCode } from './PrototypeCode';
 import { ShareDialog } from './ShareDialog';
 
 export function DesignArtifactPanel() {
-  const { currentSession, artifactView, setArtifactView, approve, isGenerating } = useDesignStore();
+  const { currentSession, designCSS, artifactView, setArtifactView, approve, isGenerating } = useDesignStore();
   const [showShareDialog, setShowShareDialog] = useState(false);
 
   if (!currentSession) return null;
@@ -46,7 +46,7 @@ export function DesignArtifactPanel() {
       {/* Content */}
       <div className="flex-1 overflow-hidden">
         {artifactView === 'preview' && (
-          <PrototypePreview code={latestPrototype.componentCode} />
+          <PrototypePreview code={latestPrototype.componentCode} designCSS={designCSS ?? undefined} />
         )}
         {artifactView === 'code' && (
           <PrototypeCode prototype={latestPrototype} />

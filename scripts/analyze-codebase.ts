@@ -764,6 +764,327 @@ function generateContextSummary(
 }
 
 // ---------------------------------------------------------------------------
+// Design token extraction
+// ---------------------------------------------------------------------------
+
+const DESIGN_TOKEN_FILES = [
+  '**/tailwind.config.*',
+  '**/variables.css',
+  '**/globals.css',
+  '**/theme.css',
+  '**/theme.ts',
+  '**/theme.js',
+  '**/index.css',
+];
+
+const DESIGN_TOKEN_FILENAMES = new Set([
+  'tailwind.config.ts',
+  'tailwind.config.js',
+  'tailwind.config.mjs',
+  'tailwind.config.cjs',
+  'variables.css',
+  'globals.css',
+  'theme.css',
+  'theme.ts',
+  'theme.js',
+  'index.css',
+]);
+
+interface DesignTokens {
+  stylingApproach: string;
+  cssCustomProperties: Record<string, string>;
+  tailwindTheme: Record<string, any>;
+  themeTokens: Record<string, any>;
+}
+
+function extractDesignTokens(
+  rootPath: string,
+  files: FileEntry[]
+): DesignTokens {
+  const tokens: DesignTokens = {
+    stylingApproach: 'Unknown',
+    cssCustomProperties: {},
+    tailwindTheme: {},
+    themeTokens: {},
+  };
+
+  // Detect styling approach from dependencies (check root + child package.json files)
+  const pkgFiles = files
+    .filter((f) => path.basename(f.path) === 'package.json' && f.path.split('/').length <= 3)
+    .map((f) => path.join(rootPath, f.path));
+  const rootPkgPath = path.join(rootPath, 'package.json');
+  if (fs.existsSync(rootPkgPath) && !pkgFiles.includes(rootPkgPath)) {
+    pkgFiles.unshift(rootPkgPath);
+  }
+  for (const pkgPath of pkgFiles) {
+    if (tokens.stylingApproach !== 'Unknown') break;
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      const allDeps = {
+        ...pkg.dependencies,
+        ...pkg.devDependencies,
+      };
+      if (allDeps['tailwindcss']) tokens.stylingApproach = 'Tailwind CSS';
+      else if (allDeps['@chakra-ui/react']) tokens.stylingApproach = 'Chakra UI';
+      else if (allDeps['@mui/material']) tokens.stylingApproach = 'Material UI';
+      else if (allDeps['styled-components']) tokens.stylingApproach = 'styled-components';
+      else if (allDeps['@emotion/react']) tokens.stylingApproach = 'Emotion';
+    } catch {}
+  }
+
+  // Find design token files
+  const designFiles = files.filter((f) => {
+    const name = path.basename(f.path);
+    return DESIGN_TOKEN_FILENAMES.has(name);
+  });
+
+  for (const f of designFiles) {
+    const abs = path.join(rootPath, f.path);
+    const name = path.basename(f.path);
+
+    if (name.endsWith('.css')) {
+      // Extract CSS custom properties from :root blocks
+      try {
+        const content = fs.readFileSync(abs, 'utf8');
+        const rootBlocks = content.matchAll(/:root\s*\{([^}]+)\}/g);
+        for (const block of rootBlocks) {
+          const props = block[1].matchAll(/\s*(--[\w-]+)\s*:\s*([^;]+);/g);
+          for (const prop of props) {
+            tokens.cssCustomProperties[prop[1].trim()] = prop[2].trim();
+          }
+        }
+        // Also extract standalone custom properties outside :root
+        const standaloneProps = content.matchAll(
+          /^\s*(--[\w-]+)\s*:\s*([^;]+);/gm
+        );
+        for (const prop of standaloneProps) {
+          if (!tokens.cssCustomProperties[prop[1].trim()]) {
+            tokens.cssCustomProperties[prop[1].trim()] = prop[2].trim();
+          }
+        }
+      } catch {}
+    } else if (name.startsWith('tailwind.config')) {
+      // Extract theme.extend from Tailwind config
+      try {
+        const content = fs.readFileSync(abs, 'utf8');
+        // Extract theme.extend block — regex approach for static analysis
+        const extendMatch = content.match(
+          /theme\s*:\s*\{[\s\S]*?extend\s*:\s*(\{[\s\S]*?\n\s{4}\})/
+        );
+        if (extendMatch) {
+          tokens.tailwindTheme._raw = extendMatch[1].slice(0, 2000);
+        }
+        // Also extract colors, fontFamily, fontSize as standalone keys
+        const colorMatch = content.match(
+          /colors?\s*:\s*(\{[\s\S]*?\n\s{6,8}\})/
+        );
+        if (colorMatch) {
+          tokens.tailwindTheme.colors = colorMatch[1].slice(0, 1000);
+        }
+        const fontMatch = content.match(
+          /fontFamily\s*:\s*(\{[\s\S]*?\n\s{6,8}\})/
+        );
+        if (fontMatch) {
+          tokens.tailwindTheme.fontFamily = fontMatch[1].slice(0, 500);
+        }
+      } catch {}
+    } else if (name === 'theme.ts' || name === 'theme.js') {
+      // Extract color/font keys from theme files (Chakra, etc.)
+      try {
+        const lines = readHeadLines(abs, 200);
+        const content = lines.join('\n');
+        // Extract color definitions
+        const colorMatch = content.match(
+          /colors?\s*[=:]\s*(\{[\s\S]*?\n\})/
+        );
+        if (colorMatch) {
+          tokens.themeTokens.colors = colorMatch[1].slice(0, 1000);
+        }
+        const fontMatch = content.match(
+          /fonts?\s*[=:]\s*(\{[\s\S]*?\n\})/
+        );
+        if (fontMatch) {
+          tokens.themeTokens.fonts = fontMatch[1].slice(0, 500);
+        }
+      } catch {}
+    }
+  }
+
+  return tokens;
+}
+
+// ---------------------------------------------------------------------------
+// Component catalog extraction
+// ---------------------------------------------------------------------------
+
+interface ComponentEntry {
+  name: string;
+  file: string;
+  props: string[];
+  classPatterns: string[];
+}
+
+function extractComponentCatalog(
+  rootPath: string,
+  files: FileEntry[]
+): ComponentEntry[] {
+  const catalog: ComponentEntry[] = [];
+  const componentDirPatterns = [
+    /(?:^|\/)components\/ui\//,
+    /(?:^|\/)components\/common\//,
+    /(?:^|\/)components\/shared\//,
+  ];
+  const isTopLevelComponent = /(?:^|\/)components\/[^/]+\.tsx$/;
+
+  // Filter to component files
+  const componentFiles = files.filter((f) => {
+    if (!f.path.endsWith('.tsx') && !f.path.endsWith('.jsx')) return false;
+    return (
+      componentDirPatterns.some((p) => p.test(f.path)) ||
+      isTopLevelComponent.test(f.path)
+    );
+  });
+
+  // Cap at 30 files
+  for (const f of componentFiles.slice(0, 30)) {
+    const abs = path.join(rootPath, f.path);
+    const lines = readHeadLines(abs, 80);
+    const content = lines.join('\n');
+
+    // Extract component name from export
+    const nameMatch =
+      content.match(
+        /export\s+(?:default\s+)?function\s+(\w+)/
+      ) ||
+      content.match(
+        /export\s+const\s+(\w+)\s*[=:]/
+      );
+    if (!nameMatch) continue;
+
+    const name = nameMatch[1];
+
+    // Extract props interface (variant/size props)
+    const props: string[] = [];
+    const propsMatch = content.match(
+      /interface\s+\w*Props\w*\s*\{([^}]*)\}/
+    );
+    if (propsMatch) {
+      const propLines = propsMatch[1].matchAll(
+        /(\w+)\s*[?:]?\s*:\s*([^;\n]+)/g
+      );
+      for (const p of propLines) {
+        if (['variant', 'size', 'color', 'intent', 'appearance'].includes(p[1])) {
+          props.push(`${p[1]}: ${p[2].trim()}`);
+        }
+      }
+    }
+
+    // Extract className patterns
+    const classPatterns: string[] = [];
+    const classMatches = content.matchAll(
+      /className=["'`]([^"'`]+)["'`]/g
+    );
+    for (const cm of classMatches) {
+      const classes = cm[1].trim();
+      if (classes.length > 5 && classes.length < 200 && !classPatterns.includes(classes)) {
+        classPatterns.push(classes);
+        if (classPatterns.length >= 3) break;
+      }
+    }
+    // Also match template literal className
+    const templateClassMatches = content.matchAll(
+      /className=\{[`'"]([^`'"]+)[`'"]\}/g
+    );
+    for (const cm of templateClassMatches) {
+      const classes = cm[1].trim();
+      if (classes.length > 5 && classes.length < 200 && !classPatterns.includes(classes)) {
+        classPatterns.push(classes);
+        if (classPatterns.length >= 3) break;
+      }
+    }
+
+    catalog.push({ name, file: f.path, props, classPatterns });
+  }
+
+  return catalog;
+}
+
+// ---------------------------------------------------------------------------
+// Design context generation
+// ---------------------------------------------------------------------------
+
+function generateDesignContext(
+  tokens: DesignTokens,
+  catalog: ComponentEntry[]
+): string {
+  const lines: string[] = [];
+
+  lines.push('DESIGN SYSTEM:');
+  lines.push(`  Styling approach: ${tokens.stylingApproach}`);
+  lines.push('');
+
+  // CSS Custom Properties
+  const cssProps = Object.entries(tokens.cssCustomProperties);
+  if (cssProps.length > 0) {
+    lines.push('COLOR PALETTE (CSS Custom Properties):');
+    for (const [name, value] of cssProps.slice(0, 40)) {
+      lines.push(`  ${name}: ${value}`);
+    }
+    if (cssProps.length > 40) {
+      lines.push(`  ... (+${cssProps.length - 40} more)`);
+    }
+    lines.push('');
+  }
+
+  // Tailwind theme
+  if (tokens.tailwindTheme.colors || tokens.tailwindTheme.fontFamily || tokens.tailwindTheme._raw) {
+    lines.push('TAILWIND THEME:');
+    if (tokens.tailwindTheme.colors) {
+      lines.push(`  colors: ${tokens.tailwindTheme.colors}`);
+    }
+    if (tokens.tailwindTheme.fontFamily) {
+      lines.push(`  fontFamily: ${tokens.tailwindTheme.fontFamily}`);
+    }
+    if (!tokens.tailwindTheme.colors && !tokens.tailwindTheme.fontFamily && tokens.tailwindTheme._raw) {
+      lines.push(`  extend: ${tokens.tailwindTheme._raw}`);
+    }
+    lines.push('');
+  }
+
+  // Theme tokens (Chakra, etc.)
+  if (tokens.themeTokens.colors || tokens.themeTokens.fonts) {
+    lines.push('THEME TOKENS:');
+    if (tokens.themeTokens.colors) {
+      lines.push(`  colors: ${tokens.themeTokens.colors}`);
+    }
+    if (tokens.themeTokens.fonts) {
+      lines.push(`  fonts: ${tokens.themeTokens.fonts}`);
+    }
+    lines.push('');
+  }
+
+  // Component patterns
+  if (catalog.length > 0) {
+    lines.push('COMPONENT PATTERNS:');
+    for (const comp of catalog) {
+      const parts = [`  ${comp.name}`];
+      if (comp.props.length > 0) {
+        parts.push(`[${comp.props.join(', ')}]`);
+      }
+      if (comp.classPatterns.length > 0) {
+        parts.push(`: "${comp.classPatterns[0]}"`);
+      }
+      lines.push(parts.join(' '));
+    }
+    lines.push('');
+  }
+
+  const result = lines.join('\n');
+  // Cap at ~3KB
+  return result.slice(0, 3072);
+}
+
+// ---------------------------------------------------------------------------
 // CLI arg parsing
 // ---------------------------------------------------------------------------
 
@@ -893,6 +1214,17 @@ async function main() {
   const schemaHints = detectSchemaHints(args.rootPath, files);
   log(`Found ${schemaHints.length} schema hints`);
 
+  // Design tokens & component catalog
+  log("Extracting design tokens...");
+  const designTokens = extractDesignTokens(args.rootPath, files);
+  log(`Styling approach: ${designTokens.stylingApproach}, CSS vars: ${Object.keys(designTokens.cssCustomProperties).length}`);
+
+  log("Extracting component catalog...");
+  const componentCatalog = extractComponentCatalog(args.rootPath, files);
+  log(`Found ${componentCatalog.length} component patterns`);
+
+  const designContext = generateDesignContext(designTokens, componentCatalog);
+
   // Context summary
   log("Generating context summary...");
   const contextSummary = generateContextSummary(
@@ -931,6 +1263,7 @@ async function main() {
     totalDirectories: directories.length,
     languageBreakdown,
     contextSummary,
+    designContext: designContext || undefined,
     rawAnalysis: JSON.stringify(rawObj),
   };
 

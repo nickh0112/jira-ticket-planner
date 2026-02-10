@@ -822,6 +822,10 @@ export async function getCodebaseContexts(): Promise<CodebaseContextListItem[]> 
   return fetchApi<CodebaseContextListItem[]>('/codebase-context');
 }
 
+export async function getCodebaseContext(id: string): Promise<CodebaseContext> {
+  return fetchApi<CodebaseContext>(`/codebase-context/${id}`);
+}
+
 export async function uploadCodebaseContext(analysis: any): Promise<CodebaseContext> {
   return fetchApi<CodebaseContext>('/codebase-context', {
     method: 'POST',
